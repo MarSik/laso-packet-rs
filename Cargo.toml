@@ -1,0 +1,14 @@
+[package]
+name = "laso_packet"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitvec = { version = "1", default-features = false }
+heapless = "0.7.16"
+ignore-result = "0.2.0"
+
+[dev-dependencies]
+quickcheck = "1"
+quickcheck_macros = "1"
+assert_hex = "0.2.2"
