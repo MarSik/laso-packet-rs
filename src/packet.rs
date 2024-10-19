@@ -1,4 +1,3 @@
-use bitvec::macros::internal::funty::Fundamental;
 use core::mem::size_of;
 use core::ops::Shr;
 use heapless::spsc::Queue;
@@ -38,7 +37,7 @@ pub enum PacketType {
 
 pub fn encode_varlength(mut val: u32, mut consumer: impl FnMut(u8)) {
     while val >= 0x80 {
-        consumer(0x80 | (val.as_u8() & 0x7F));
+        consumer(0x80 | ((val as u8) & 0x7F));
         val >>= 7;
     }
     consumer(val as u8);
@@ -47,7 +46,7 @@ pub fn encode_varlength(mut val: u32, mut consumer: impl FnMut(u8)) {
 impl PacketType {
     pub fn encode(self, consumer: impl FnMut(u8)) {
         let val = self as u16;
-        encode_varlength(val.as_u32(), consumer);
+        encode_varlength(val as u32, consumer);
     }
 }
 
@@ -188,7 +187,7 @@ impl<const N: usize> MessageSender<N> {
             self.message.packet_type.encode(|b| {
                 p.data.push(b).ignore();
             });
-            encode_varlength(self.message.source_address.as_u32(), |b| {
+            encode_varlength(self.message.source_address as u32, |b| {
                 p.data.push(b).ignore();
             });
         }
@@ -283,7 +282,7 @@ impl PacketWithGolay {
         debug_assert_eq!(c >> 12, 0);
 
         let s = Self::syndrome(c.into());
-        let code = s.as_u32() | c.as_u32();
+        let code = (s as u32) | (c as u32);
 
         return (Self::parity_24b(code) << 23) | code; /* assemble codeword */
     }
@@ -313,7 +312,7 @@ impl PacketWithGolay {
         parity = (parity >> 4) ^ parity;
         parity = (parity >> 2) ^ parity;
         parity = (parity >> 1) ^ parity;
-        parity.as_u32() & 0x1_u32
+        (parity as u32) & 0x1_u32
     }
 
     fn count_ones(mut b: u32) -> usize {
@@ -916,7 +915,7 @@ mod test {
             let deinterlaced = PacketWithInterleave::deinterlace_single(*b);
             assert_eq_hex!(
                 deinterlaced,
-                idx.as_u8(),
+                idx as u8,
                 "DC 6b to 8b table not reversible"
             );
         }
