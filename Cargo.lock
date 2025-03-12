@@ -150,7 +150,7 @@ checksum = "665ff4dce8edd10d490641ccb78949832f1ddbff02c584fb1f85ab888fe0e50c"
 
 [[package]]
 name = "laso_packet"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_hex",
  "bitvec",

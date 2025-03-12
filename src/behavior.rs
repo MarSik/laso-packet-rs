@@ -6,7 +6,7 @@ use core::{
 
 use crate::packet::{GolayDecoderResult, PacketWithGolay, PacketWithInterleave, PacketWithoutDC};
 
-pub async fn decode_with_breaks(packet: &[u8; 32]) -> GolayDecoderResult {
+pub async fn decode_with_breaks(packet: &[u8]) -> GolayDecoderResult {
     let p = PacketWithoutDC::new(packet);
     let p2 = PacketWithInterleave::from(&p);
 

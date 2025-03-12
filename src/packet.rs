@@ -54,9 +54,23 @@ pub enum PacketStatus {
     Raw(u8),
     // Naked mode, the status byte is used for extra payload data
     Data(u8),
+    // Internally prepared, not for radio transmission
+    Internal,
 }
 
 impl PacketStatus {
+    pub fn finished(&self) -> bool {
+        match self {
+            PacketStatus::Legacy(legacy) => legacy.last,
+            PacketStatus::V2(v2) => v2.short,
+            PacketStatus::CRC8P(_) => false,
+            PacketStatus::Unknown => true,
+            PacketStatus::Raw(_) => false,
+            PacketStatus::Data(_) => false,
+            PacketStatus::Internal => true,
+        }
+    }
+
     pub fn decode(&self, next: u8) -> Self {
         match self {
             PacketStatus::Legacy(_) => PacketStatus::Legacy(PacketStatusLegacy {
@@ -93,6 +107,7 @@ impl PacketStatus {
             PacketStatus::CRC8P(_) => Self::CRC8P(next),
             PacketStatus::Raw(_) => Self::Raw(next),
             PacketStatus::Data(_) => Self::Data(next),
+            PacketStatus::Internal => Self::Internal,
         }
     }
 
@@ -122,7 +137,7 @@ impl PacketStatus {
                 flags
             }
             PacketStatus::CRC8P(crc) => *crc,
-            PacketStatus::Unknown => 0x00,
+            PacketStatus::Unknown | PacketStatus::Internal => 0x00,
             PacketStatus::Raw(raw) => *raw,
             PacketStatus::Data(raw) => *raw,
         }

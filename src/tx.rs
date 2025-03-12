@@ -79,6 +79,7 @@ impl<const N: usize> MessageSender<N> {
             PacketStatus::Unknown => (),
             PacketStatus::Raw(_) => (),
             PacketStatus::Data(_) => (),
+            PacketStatus::Internal => (),
         };
 
         while !p.data.is_full() && self.sent < self.message.data.len() {

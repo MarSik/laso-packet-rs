@@ -25,6 +25,7 @@ pub enum RxDecodeError {
     Full,
     UnknownPacket,
     RawNeedsDecoding,
+    InternalOnly,
 }
 
 impl<const N: usize> RxMessage<N> {
@@ -95,10 +96,11 @@ impl<const N: usize> RxMessage<N> {
                 }
             }
             PacketStatus::CRC8P(crc) => {
-                // TODO Test checksum
+                // TODO! Test checksum
                 // on fail return Err(CrcFailed)
             }
             PacketStatus::Unknown => return Err(RxDecodeError::UnknownPacket),
+            PacketStatus::Internal => return Err(RxDecodeError::InternalOnly),
             PacketStatus::Raw(_) => return Err(RxDecodeError::RawNeedsDecoding),
             PacketStatus::Data(_) => {
                 // Naked packet, ignore here and append data lower
@@ -106,6 +108,8 @@ impl<const N: usize> RxMessage<N> {
         };
 
         self.last_status = cur_status;
+        self.errors = self.errors.saturating_add(dec.errors as u8);
+        self.errors = self.errors.saturating_add(dec.parity_errors as u8);
 
         for b in &p.data[skip..] {
             self.msg.data.push(*b).map_err(|_| RxDecodeError::Full)?;
@@ -116,5 +120,15 @@ impl<const N: usize> RxMessage<N> {
         }
 
         Ok(())
+    }
+}
+
+impl<const N: usize> From<Message<N>> for RxMessage<N> {
+    fn from(msg: Message<N>) -> Self {
+        Self {
+            msg,
+            last_status: PacketStatus::Internal,
+            ..Default::default()
+        }
     }
 }
