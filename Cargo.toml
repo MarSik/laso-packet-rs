@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+futures-lite = "2.6.0"
 heapless = "0.7.16"
 ignore-result = "0.2.0"
 

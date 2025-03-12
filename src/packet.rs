@@ -1,268 +1,222 @@
-use core::mem::size_of;
-use core::ops::Shr;
-use heapless::spsc::Queue;
 use heapless::Vec;
 use ignore_result::Ignore;
 
-#[derive(Clone)]
-pub struct RawReceiveData<const N: usize> {
-    pub packet: Vec<u8, N>,
-    pub lna: u8,
-    pub rssi: u8,
-}
-
-impl <const N: usize> RawReceiveData<N> {
-    pub fn init() -> Self {
-        Self {
-            packet: Vec::new(),
-            lna: 0,
-            rssi: 0,
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.packet.clear();
-    }
-}
-
-#[repr(u16)]
-#[derive(Copy, Clone, Eq, PartialEq)]
-pub enum PacketType {
-    Unknown = 0x00,
-    // TODO
-    Temperature = 0x101,
-    WaterLevel = 0x10A,
-    GsmStatus = 0x102,
-}
-
-pub fn encode_varlength(mut val: u32, mut consumer: impl FnMut(u8)) {
-    while val >= 0x80 {
-        consumer(0x80 | ((val as u8) & 0x7F));
-        val >>= 7;
-    }
-    consumer(val as u8);
-}
-
-impl PacketType {
-    pub fn encode(self, consumer: impl FnMut(u8)) {
-        let val = self as u16;
-        encode_varlength(val as u32, consumer);
-    }
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub struct RxMessage<const N: usize> {
-    pub data: Vec<u8, { N }>,
-    pub ack_wanted: bool,
-    pub ack: bool,
-    pub source_address: u16,
-    pub packet_type: u16,
-    pub header_length: u8,
-    pub rssi: u8,
-    pub lna: u8,
-    pub errors: u8,
-}
-
-impl<const N: usize> RxMessage<{ N }> {
-    pub fn new() -> Self {
-        Self {
-            data: Vec::new(),
-            ack_wanted: false,
-            ack: false,
-            source_address: 0,
-            packet_type: 0,
-            header_length: 0,
-            rssi: 0,
-            lna: 0,
-            errors: 0,
-        }
-    }
-
-    pub fn parse(&mut self) {
-        let mut skip = 0;
-        (self.packet_type, skip) = decode_extended_number(&self.data, 0);
-        (self.source_address, skip) = decode_extended_number(&self.data, skip);
-        self.header_length = skip as u8;
-    }
-}
-
-impl<const N: usize> From<Message<N>> for RxMessage<N> {
-    fn from(m: Message<N>) -> Self {
-        let mut rx = RxMessage::new();
-        rx.packet_type = m.packet_type as u16;
-        rx.source_address = m.source_address;
-        for b in m.data.iter() {
-            rx.data.push(*b).ignore();
-        }
-        rx
-    }
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub struct Message<const N: usize> {
-    pub data: Queue<u8, { N }>,
-    pub ack_wanted: bool,
-    pub ack: bool,
-    pub source_address: u16,
-    pub packet_type: PacketType,
-}
-
-pub struct IntoLeastSigByte(u8);
-impl Into<u8> for IntoLeastSigByte {
-    fn into(self) -> u8 {
-        self.0
-    }
-}
-
-impl From<u8> for IntoLeastSigByte {
-    fn from(v: u8) -> Self {
-        IntoLeastSigByte(v)
-    }
-}
-
-impl From<u16> for IntoLeastSigByte {
-    fn from(v: u16) -> Self {
-        IntoLeastSigByte(v as u8)
-    }
-}
-
-impl From<u32> for IntoLeastSigByte {
-    fn from(v: u32) -> Self {
-        IntoLeastSigByte(v as u8)
-    }
-}
-
-impl<const N: usize> Message<N> {
-    pub fn new() -> Self {
-        Self {
-            data: Queue::new(),
-            ack_wanted: false,
-            ack: false,
-            source_address: 0,
-            packet_type: PacketType::Unknown,
-        }
-    }
-
-    pub fn sender(self) -> MessageSender<{ N }> {
-        MessageSender {
-            message: self,
-            first: true,
-        }
-    }
-
-    pub fn add<T: Shr<usize, Output = T> + Into<IntoLeastSigByte> + Copy>(&mut self, v: T) {
-        let mut bits = size_of::<T>() * 8;
-        while bits >= 8 {
-            bits -= 8;
-            let bw = (v >> bits).into();
-            let b8 = bw.into();
-            self.data.enqueue(b8);
-        }
-    }
-
-    pub fn add_varlen(&mut self, v: u32) {
-        encode_varlength(v, |b| {
-            self.data.enqueue(b);
-        });
-    }
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub struct MessageSender<const N: usize> {
-    message: Message<{ N }>,
-    first: bool,
-}
-
-impl<const N: usize> MessageSender<N> {
-    pub fn data_to_send(&self) -> bool {
-        !self.message.data.is_empty()
-    }
-
-    pub fn packet(&mut self) -> PacketData {
-        let mut p = PacketData::new();
-
-        if self.first {
-            // Queue source address and packet type
-            // First packet always has enough space for this
-            self.message.packet_type.encode(|b| {
-                p.data.push(b).ignore();
-            });
-            encode_varlength(self.message.source_address as u32, |b| {
-                p.data.push(b).ignore();
-            });
-        }
-
-        while !p.data.is_full() && !self.message.data.is_empty() {
-            p.data.push(self.message.data.dequeue().unwrap()).unwrap();
-        }
-
-        while !p.data.is_full() {
-            p.data.push(0u8).unwrap();
-        }
-
-        p.last = self.message.data.is_empty();
-        p.first = self.first;
-        self.first = false;
-
-        return p;
-    }
-}
-
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct PacketData {
-    pub data: Vec<u8, 11>,
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
+pub struct PacketStatusLegacy {
     pub first: bool,
     pub last: bool,
+    pub checksum4: u8,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
+
+pub struct PacketStatusV2 {
+    pub short: bool, // Just one packet
+
+    // Header contains only Node ID and following packets have no CRC,
+    // but use the last byte for data. This can also be called
+    // the raw mode, because all handling is done in the higher
+    // level app.
+    pub naked: bool,
+
+    // The transmitter will switch to receive mode after this packet
+    // is sent. This can be used for commands or acks.
+    pub listens: bool,
+}
+impl PacketStatusV2 {
+    pub fn naked() -> PacketStatusV2 {
+        Self {
+            naked: true,
+            ..Default::default()
+        }
+    }
+
+    pub fn listens(self, listens: bool) -> Self {
+        Self { listens, ..self }
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
+#[repr(u8)]
+pub enum PacketStatus {
+    // The original LASO packet format
+    Legacy(PacketStatusLegacy),
+    // Packets that support naked and listen modes
+    V2(PacketStatusV2),
+    // Continuation of V2 with just CRC8P
+    CRC8P(u8),
+    // Unknown, use as a start state while decoding
+    #[default]
+    Unknown,
+    // Received data before decoding
+    Raw(u8),
+    // Naked mode, the status byte is used for extra payload data
+    Data(u8),
+}
+
+impl PacketStatus {
+    pub fn decode(&self, next: u8) -> Self {
+        match self {
+            PacketStatus::Legacy(_) => PacketStatus::Legacy(PacketStatusLegacy {
+                first: next & 0x4 > 0,
+                last: next & 0x1 == 0,
+                checksum4: next >> 4,
+            }),
+            PacketStatus::V2(v2) => {
+                if v2.naked {
+                    Self::Data(next)
+                } else {
+                    Self::CRC8P(next)
+                }
+            }
+            PacketStatus::Unknown => {
+                // The first packet in the legacy status mode always sets the "first" flag, use it to distinguish
+                // the two versions
+                if next & 0b100 > 0 {
+                    // Legacy
+                    PacketStatus::Legacy(PacketStatusLegacy {
+                        first: next & 0x4 > 0,
+                        last: next & 0x1 == 0,
+                        checksum4: next >> 4,
+                    })
+                } else {
+                    // V2
+                    PacketStatus::V2(PacketStatusV2 {
+                        short: next & 0x1 == 0,
+                        listens: next & 0x8 > 0,
+                        naked: next & 0x2 > 0,
+                    })
+                }
+            }
+            PacketStatus::CRC8P(_) => Self::CRC8P(next),
+            PacketStatus::Raw(_) => Self::Raw(next),
+            PacketStatus::Data(_) => Self::Data(next),
+        }
+    }
+
+    pub fn encode(&self) -> u8 {
+        match self {
+            PacketStatus::Legacy(legacy) => {
+                let mut flags: u8 = 0;
+                if legacy.first {
+                    flags += 0x4;
+                }
+                if !legacy.last {
+                    flags += 0x1;
+                }
+                flags | (legacy.checksum4 << 4)
+            }
+            PacketStatus::V2(status_v2) => {
+                let mut flags: u8 = 0;
+                if status_v2.listens {
+                    flags += 0x8;
+                }
+                if status_v2.naked {
+                    flags += 0x2;
+                }
+                if !status_v2.short {
+                    flags += 0x1;
+                }
+                flags
+            }
+            PacketStatus::CRC8P(crc) => *crc,
+            PacketStatus::Unknown => 0x00,
+            PacketStatus::Raw(raw) => *raw,
+            PacketStatus::Data(raw) => *raw,
+        }
+    }
+
+    pub(crate) fn legacy(first: bool, last: bool) -> PacketStatus {
+        PacketStatus::Legacy(PacketStatusLegacy {
+            first,
+            last,
+            checksum4: 0,
+        })
+    }
+}
+
+#[derive(Default, Clone, Eq, PartialEq, Debug)]
+pub struct PacketData {
+    pub data: Vec<u8, 11>,
+    pub status: PacketStatus,
 }
 
 impl PacketData {
     pub fn new() -> PacketData {
-        return PacketData {
+        PacketData {
             data: Vec::new(),
-            first: false,
-            last: false,
-        };
+            status: PacketStatus::Unknown,
+        }
     }
 
-    fn crc(acc: u8, v: &u8) -> u8 {
+    fn checksum(acc: u8, v: &u8) -> u8 {
         acc.overflowing_add(*v).0
     }
 
-    fn compute_cfg_byte(&self) -> u8 {
-        let mut crc8: u8 = self.data.iter().fold(0x55u8, Self::crc);
-
-        let mut flags: u8 = 0;
-        if self.first {
-            flags += 0x4;
-        }
-        if !self.last {
-            flags += 0x1;
-        }
-
-        crc8 = crc8.overflowing_add(flags).0;
-
-        let ucrc = crc8 >> 4;
-        let lcrc = crc8 & 0xf;
-        let crc4 = ucrc.overflowing_add(lcrc).0;
-
-        let ret: u8 = flags | (crc4 << 4);
-
-        return ret;
+    // Compare recomputed and current status and check packet for logical validity
+    //
+    // This is at the moment only effective for:
+    // - Packets in legacy mode where each packet has a status byte and packet checksum
+    // - The first packet in new protocol mode, the additional packet has only full message crc
+    pub fn check_valid(&self) -> bool {
+        self.compute_status() == self.status
     }
 
-    pub fn to_wire_data(&self) -> [u8; 12] {
+    // This is only effective for:
+    // - Packets in legacy mode where each packet has a status byte
+    // - The first packet in new protocol mode, the additional packets have no status
+    pub fn compute_status(&self) -> PacketStatus {
+        match self.status {
+            PacketStatus::Legacy(legacy) => {
+                let mut checksum8: u8 = self.data.iter().fold(0x55u8, Self::checksum);
+
+                let strip_chsum = PacketStatus::Legacy(PacketStatusLegacy {
+                    checksum4: 0,
+                    ..legacy
+                });
+
+                checksum8 = checksum8.overflowing_add(strip_chsum.encode()).0;
+
+                let ucrc = checksum8 >> 4;
+                let lcrc = checksum8 & 0xf;
+                let checksum4 = ucrc.overflowing_add(lcrc).0;
+
+                PacketStatus::Legacy(PacketStatusLegacy {
+                    checksum4,
+                    ..legacy
+                })
+            }
+            _ => self.status,
+        }
+    }
+
+    pub(crate) fn to_wire_data(&self) -> [u8; 12] {
         let mut out = [0u8; 12];
         for (idx, v) in self.data.iter().enumerate() {
             out[idx] = *v;
         }
-        out[11] = self.compute_cfg_byte();
-        return out;
+        out[11] = self.compute_status().encode();
+        out
+    }
+
+    // Encode for transmit
+    pub fn encode_for_transmit(&self) -> PacketWithoutDC {
+        let p = PacketWithGolay::from(self);
+        let p = PacketWithInterleave::from(&p);
+        PacketWithoutDC::from(&p)
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 pub struct PacketWithGolay {
     data: [u8; 24],
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct GolayDecoderResult {
+    pub data: PacketData,
+    pub parity_errors: usize,
+    pub errors: usize,
 }
 
 impl PacketWithGolay {
@@ -284,7 +238,7 @@ impl PacketWithGolay {
         let s = Self::syndrome(c.into());
         let code = (s as u32) | (c as u32);
 
-        return (Self::parity_24b(code) << 23) | code; /* assemble codeword */
+        (Self::parity_24b(code) << 23) | code /* assemble codeword */
     }
 
     fn syndrome(mut cw: u32) -> u32 {
@@ -413,8 +367,61 @@ impl PacketWithGolay {
 
         return ((cwsaver & 0xfff) as u16, 0, Self::parity_24b(cwsaver) == 0); /* return original if no corrections */
     }
+}
 
-    pub fn from(p: &PacketData) -> Self {
+impl From<&PacketWithGolay> for GolayDecoderResult {
+    // Convert Golay encoded data into the final readable PacketData
+    // Make sure the p.status is set to whatever the previous packet reported
+    // to make sure the status type autodetection works correctly
+    fn from(golay: &PacketWithGolay) -> Self {
+        let mut ret = GolayDecoderResult::default();
+
+        let mut buff = [0_u8; 12];
+
+        let mut i_src = 0;
+        let mut i_dst = 0;
+
+        while i_src < golay.data.len() {
+            let src1 = ((golay.data[i_src] as u32) << 16)
+                + ((golay.data[i_src + 1] as u32) << 8)
+                + (golay.data[i_src + 2] as u32);
+            let src2 = ((golay.data[i_src + 3] as u32) << 16)
+                + ((golay.data[i_src + 4] as u32) << 8)
+                + (golay.data[i_src + 5] as u32);
+
+            let (dst1, err1, parity1) = PacketWithGolay::undo_golay(src1);
+            let (dst2, err2, parity2) = PacketWithGolay::undo_golay(src2);
+
+            if !parity1 {
+                ret.parity_errors += 1;
+            }
+            if !parity2 {
+                ret.parity_errors += 1;
+            }
+
+            buff[i_dst] = (dst1 >> 4) as u8; // [12:4]
+            buff[i_dst + 1] = (((dst1 & 0xf) << 4) as u8) + (((dst2 & 0xf00) >> 8) as u8); // [4:0] [12:8]
+            buff[i_dst + 2] = dst2 as u8; // [8:0]
+
+            ret.errors += err1 + err2;
+
+            i_src += 6;
+            i_dst += 3;
+        }
+
+        ret.data.data.clear();
+        for i in 0..11 {
+            // The destination is sized properly to take 11B
+            ret.data.data.push(buff[i]).ignore();
+        }
+        ret.data.status = PacketStatus::Raw(buff[11]);
+
+        ret
+    }
+}
+
+impl From<&PacketData> for PacketWithGolay {
+    fn from(p: &PacketData) -> Self {
         let mut ret = PacketWithGolay { data: [0u8; 24] };
 
         let wire = p.to_wire_data();
@@ -441,52 +448,11 @@ impl PacketWithGolay {
             i_dst += 6;
         }
 
-        return ret;
-    }
-
-    pub fn to(&self, p: &mut PacketData, errtotal: &mut usize) -> bool {
-        let mut buff = [0_u8; 12];
-
-        let mut i_src = 0;
-        let mut i_dst = 0;
-
-        while i_src < self.data.len() {
-            let src1 = ((self.data[i_src] as u32) << 16)
-                + ((self.data[i_src + 1] as u32) << 8)
-                + (self.data[i_src + 2] as u32);
-            let src2 = ((self.data[i_src + 3] as u32) << 16)
-                + ((self.data[i_src + 4] as u32) << 8)
-                + (self.data[i_src + 5] as u32);
-
-            let (dst1, err1, _parity1) = Self::undo_golay(src1);
-            let (dst2, err2, _parity2) = Self::undo_golay(src2);
-
-            buff[i_dst] = (dst1 >> 4) as u8; // [12:4]
-            buff[i_dst + 1] = (((dst1 & 0xf) << 4) as u8) + (((dst2 & 0xf00) >> 8) as u8); // [4:0] [12:8]
-            buff[i_dst + 2] = dst2 as u8; // [8:0]
-
-            *errtotal += err1 + err2;
-
-            i_src += 6;
-            i_dst += 3;
-        }
-
-        p.data.clear();
-        for i in 0..11 {
-            // The destination is sized properly to take 11B
-            p.data.push(buff[i]).ignore();
-        }
-
-        // Compute flags and compare CRC
-        let flags = buff[11];
-        p.first = (flags & 0x4) > 0;
-        p.last = (flags & 0x1) == 0;
-
-        return p.compute_cfg_byte() == flags;
+        ret
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 pub struct PacketWithInterleave {
     data: [u8; 24],
 }
@@ -505,9 +471,66 @@ impl PacketWithInterleave {
         ((w & 0x1) as u8) << sh
     }
 
+    fn _nb(w: u8, b: usize) -> u32 {
+        ((w >> b) & 0x1) as u32
+    }
+}
+
+impl From<&PacketWithInterleave> for PacketWithGolay {
+    fn from(p: &PacketWithInterleave) -> Self {
+        let mut ret = PacketWithGolay::default();
+        let mut d0: u32 = 0;
+        let mut d1: u32 = 0;
+        let mut d2: u32 = 0;
+        let mut d3: u32 = 0;
+        let mut d4: u32 = 0;
+        let mut d5: u32 = 0;
+        let mut d6: u32 = 0;
+        let mut d7: u32 = 0;
+
+        for src in 0..=23 {
+            d0 <<= 1;
+            d1 <<= 1;
+            d2 <<= 1;
+            d3 <<= 1;
+            d4 <<= 1;
+            d5 <<= 1;
+            d6 <<= 1;
+            d7 <<= 1;
+
+            d0 |= PacketWithInterleave::_nb(p.data[23 - src], 7);
+            d1 |= PacketWithInterleave::_nb(p.data[23 - src], 6);
+            d2 |= PacketWithInterleave::_nb(p.data[23 - src], 5);
+            d3 |= PacketWithInterleave::_nb(p.data[23 - src], 4);
+            d4 |= PacketWithInterleave::_nb(p.data[23 - src], 3);
+            d5 |= PacketWithInterleave::_nb(p.data[23 - src], 2);
+            d6 |= PacketWithInterleave::_nb(p.data[23 - src], 1);
+            d7 |= PacketWithInterleave::_nb(p.data[23 - src], 0);
+        }
+
+        for (dst, val) in [
+            (0, d0),
+            (3, d1),
+            (6, d2),
+            (9, d3),
+            (12, d4),
+            (15, d5),
+            (18, d6),
+            (21, d7),
+        ] {
+            ret.data[dst] = (val >> 16) as u8;
+            ret.data[dst + 1] = (val >> 8) as u8;
+            ret.data[dst + 2] = val as u8;
+        }
+
+        ret
+    }
+}
+
+impl From<&PacketWithGolay> for PacketWithInterleave {
     // Transform 8 24b src chunks into 24 8b dst chunks
     // [A23 .. A0][B23 .. B0] ... [H23 .. H0] -> [A0 B0 .. H0][A1 B1 .. H1] ... [A23 B23 .. H23]
-    pub fn from(p: &PacketWithGolay) -> Self {
+    fn from(p: &PacketWithGolay) -> Self {
         let mut ret = PacketWithInterleave { data: [0u8; 24] };
 
         let mut src_a = Self::g3B(p.data[0], p.data[1], p.data[2]);
@@ -540,83 +563,6 @@ impl PacketWithInterleave {
         }
 
         return ret;
-    }
-
-    fn deinterlace_single(src: u8) -> u8 {
-        // b01...... prefix
-        if (src >> 6) == 0b01 {
-            return match src & 0b111111 {
-                0b011001 => 0b000000,
-                0b110001 => 0b000001,
-                0b110010 => 0b000010,
-                0b100101 => 0b000100,
-                0b101001 => 0b001000,
-                0b010011 => 0b010000,
-                0b100011 => 0b100000,
-                0b110100 => 0b110000,
-                0b100110 => 0b111111,
-                0b001110 => 0b111110,
-                0b001101 => 0b111101,
-                0b011010 => 0b111011,
-                0b010110 => 0b110111,
-                0b101100 => 0b101111,
-                0b011100 => 0b011111,
-                0b001011 => 0b001111,
-                b => b,
-            };
-        } else {
-            return src & 0b111111;
-        }
-    }
-
-    fn _nb(w: u8, b: usize) -> u32 {
-        ((w >> b) & 0x1) as u32
-    }
-
-    pub fn to(&self, p: &mut PacketWithGolay) {
-        let mut d0: u32 = 0;
-        let mut d1: u32 = 0;
-        let mut d2: u32 = 0;
-        let mut d3: u32 = 0;
-        let mut d4: u32 = 0;
-        let mut d5: u32 = 0;
-        let mut d6: u32 = 0;
-        let mut d7: u32 = 0;
-
-        for src in 0..=23 {
-            d0 <<= 1;
-            d1 <<= 1;
-            d2 <<= 1;
-            d3 <<= 1;
-            d4 <<= 1;
-            d5 <<= 1;
-            d6 <<= 1;
-            d7 <<= 1;
-
-            d0 |= Self::_nb(self.data[23 - src], 7);
-            d1 |= Self::_nb(self.data[23 - src], 6);
-            d2 |= Self::_nb(self.data[23 - src], 5);
-            d3 |= Self::_nb(self.data[23 - src], 4);
-            d4 |= Self::_nb(self.data[23 - src], 3);
-            d5 |= Self::_nb(self.data[23 - src], 2);
-            d6 |= Self::_nb(self.data[23 - src], 1);
-            d7 |= Self::_nb(self.data[23 - src], 0);
-        }
-
-        for (dst, val) in [
-            (0, d0),
-            (3, d1),
-            (6, d2),
-            (9, d3),
-            (12, d4),
-            (15, d5),
-            (18, d6),
-            (21, d7),
-        ] {
-            p.data[dst] = (val >> 16) as u8;
-            p.data[dst + 1] = (val >> 8) as u8;
-            p.data[dst + 2] = val as u8;
-        }
     }
 }
 
@@ -690,7 +636,7 @@ const CODE_6TO8: [u8; 64] = [
     0b01100110_u8,
 ];
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 pub struct PacketWithoutDC {
     data: [u8; 32],
 }
@@ -707,7 +653,70 @@ impl PacketWithoutDC {
         s
     }
 
-    pub fn from(p: &PacketWithInterleave) -> PacketWithoutDC {
+    pub fn data(&self) -> [u8; 32] {
+        self.data
+    }
+
+    fn balance_dc(src: u8) -> u8 {
+        CODE_6TO8[src as usize]
+    }
+
+    fn strip_dc_balance_single(src: u8) -> u8 {
+        // b01...... prefix
+        if (src >> 6) == 0b01 {
+            return match src & 0b111111 {
+                0b011001 => 0b000000,
+                0b110001 => 0b000001,
+                0b110010 => 0b000010,
+                0b100101 => 0b000100,
+                0b101001 => 0b001000,
+                0b010011 => 0b010000,
+                0b100011 => 0b100000,
+                0b110100 => 0b110000,
+                0b100110 => 0b111111,
+                0b001110 => 0b111110,
+                0b001101 => 0b111101,
+                0b011010 => 0b111011,
+                0b010110 => 0b110111,
+                0b101100 => 0b101111,
+                0b011100 => 0b011111,
+                0b001011 => 0b001111,
+                b => b,
+            };
+        } else {
+            return src & 0b111111;
+        }
+    }
+}
+
+impl From<&PacketWithoutDC> for PacketWithInterleave {
+    fn from(p: &PacketWithoutDC) -> Self {
+        let mut ret = PacketWithInterleave::default();
+        let mut buff: u16 = 0;
+        let mut buff_cnt: u8 = 0;
+        let mut dst_next = 0;
+
+        for i in 0..p.data.len() {
+            // In LASO each 6 bit chunk is consumed from the first (lowest index) unconsumed byte's LSb side first,
+            let src = p.data[i];
+            let dst = PacketWithoutDC::strip_dc_balance_single(src) as u16;
+            buff |= dst << buff_cnt;
+            buff_cnt += 6;
+
+            if buff_cnt >= 8 {
+                let b = buff & 0xff;
+                buff >>= 8;
+                buff_cnt -= 8;
+                ret.data[dst_next] = b as u8;
+                dst_next += 1;
+            }
+        }
+        ret
+    }
+}
+
+impl From<&PacketWithInterleave> for PacketWithoutDC {
+    fn from(p: &PacketWithInterleave) -> PacketWithoutDC {
         let mut ret = PacketWithoutDC { data: [0u8; 32] };
 
         let mut buff: u16 = 0;
@@ -726,41 +735,17 @@ impl PacketWithoutDC {
             let idx = buff & 0x3f;
             buff >>= 6;
             buff_cnt -= 6;
-            ret.data[i] = CODE_6TO8[idx as usize];
+            ret.data[i] = PacketWithoutDC::balance_dc(idx as u8);
         }
 
-        return ret;
-    }
-
-    pub fn to(&self, p: &mut PacketWithInterleave) {
-        let mut buff: u16 = 0;
-        let mut buff_cnt: u8 = 0;
-        let mut dst_next = 0;
-
-        for i in 0..self.data.len() {
-            // In LASO each 6 bit chunk is consumed from the first (lowest index) unconsumed byte's LSb side first,
-            let src = self.data[i];
-            let dst = PacketWithInterleave::deinterlace_single(src) as u16;
-            buff |= dst << buff_cnt;
-            buff_cnt += 6;
-
-            if buff_cnt >= 8 {
-                let b = buff & 0xff;
-                buff >>= 8;
-                buff_cnt -= 8;
-                p.data[dst_next] = b as u8;
-                dst_next += 1;
-            }
-        }
-    }
-
-    pub fn data(&self) -> [u8; 32] {
-        self.data
+        ret
     }
 }
 
 #[cfg(test)]
 mod test {
+    use core::error;
+
     use super::*;
     use assert_hex::assert_eq_hex;
     use bitvec::prelude::*;
@@ -785,8 +770,7 @@ mod test {
             "Interleave does not work the same as the C code."
         );
 
-        let mut pre_2 = PacketWithGolay { data: [0; 24] };
-        post.to(&mut pre_2);
+        let pre_2: PacketWithGolay = (&post).into();
         assert_eq_hex!(pre_2, pre, "Interleave is not reversible");
     }
 
@@ -812,8 +796,7 @@ mod test {
             "DC removal (6b to 8b) does not match LASO."
         );
 
-        let mut pre2 = PacketWithInterleave { data: [0; 24] };
-        post.to(&mut pre2);
+        let pre2: PacketWithInterleave = (&post).into();
 
         assert_eq_hex!(pre2.data, pre.data, "DC removal is not reversible");
     }
@@ -836,16 +819,16 @@ mod test {
             .zip(pre.data.view_bits::<Lsb0>().chunks(6))
             .enumerate()
         {
-            let not_interleaved = dest.load_le::<u8>();
-            let interleaved = src.load_be::<u8>();
-            let reversed = PacketWithInterleave::deinterlace_single(interleaved);
+            let with_dc = dest.load_le::<u8>();
+            let without_dc = src.load_be::<u8>();
+            let reversed = PacketWithoutDC::strip_dc_balance_single(without_dc);
             assert_eq_hex!(
-                not_interleaved,
+                with_dc,
                 reversed,
                 "de-DC failed on {}. chunk ({:#08b} <-> {:#010b} <-> {:#08b})",
                 idx,
-                not_interleaved,
-                interleaved,
+                with_dc,
+                without_dc,
                 reversed
             );
         }
@@ -855,10 +838,8 @@ mod test {
     fn test_golay_reversibility() {
         let mut packet = PacketData {
             data: heapless::Vec::new(),
-            first: true,
-            last: true,
+            ..Default::default()
         };
-        let mut packet_2 = packet.clone();
 
         for v in [
             0x01_u8, 0x23_u8, 0x45_u8, 0x67_u8, 0x89_u8, 0xab_u8, 0xcd_u8, 0xef_u8, 0xf0_u8,
@@ -869,11 +850,15 @@ mod test {
 
         let p_w_golay = PacketWithGolay::from(&packet);
 
-        let mut errors: usize = 0;
-        p_w_golay.to(&mut packet_2, &mut errors);
+        let packet_2: GolayDecoderResult = (&p_w_golay).into();
 
-        assert_eq_hex!(packet.data, packet_2.data, "Golay not reversible.");
-        assert_eq_hex!(errors, 0, "Golay reversible with errors.");
+        assert_eq_hex!(packet.data, packet_2.data.data, "Golay not reversible.");
+        assert_eq_hex!(packet_2.errors, 0, "Golay reversible with errors.");
+        assert_eq_hex!(
+            packet_2.parity_errors,
+            0,
+            "Golay reversible with parity errors."
+        );
     }
 
     #[test]
@@ -881,8 +866,11 @@ mod test {
         // Prepare input packet data
         let mut packet = PacketData {
             data: heapless::Vec::new(),
-            first: true,
-            last: true,
+            status: PacketStatus::Legacy(PacketStatusLegacy {
+                first: true,
+                last: true,
+                checksum4: 0,
+            }),
         };
         for v in [
             0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0xe1, 0xd2, 0xc3,
@@ -890,7 +878,7 @@ mod test {
             packet.data.push(v).expect("Not enough space in vector");
         }
 
-        assert_eq_hex!(0x74, packet.compute_cfg_byte(), "Bad flags byte.");
+        assert_eq_hex!(0x74, packet.compute_status().encode(), "Bad flags byte.");
 
         let p_w_golay = PacketWithGolay::from(&packet);
         let p_w_interleave = PacketWithInterleave::from(&p_w_golay);
@@ -912,12 +900,8 @@ mod test {
     #[test]
     fn test_dedc_single() {
         for (idx, b) in CODE_6TO8.iter().enumerate() {
-            let deinterlaced = PacketWithInterleave::deinterlace_single(*b);
-            assert_eq_hex!(
-                deinterlaced,
-                idx as u8,
-                "DC 6b to 8b table not reversible"
-            );
+            let deinterlaced = PacketWithoutDC::strip_dc_balance_single(*b);
+            assert_eq_hex!(deinterlaced, idx as u8, "DC 6b to 8b table not reversible");
         }
     }
 
@@ -926,8 +910,11 @@ mod test {
         // Prepare input packet data
         let mut packet = PacketData {
             data: heapless::Vec::new(),
-            first: true,
-            last: true,
+            status: PacketStatus::Legacy(PacketStatusLegacy {
+                first: true,
+                last: true,
+                checksum4: 0,
+            }),
         };
         for v in [
             0x81, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
@@ -935,30 +922,22 @@ mod test {
             packet.data.push(v).expect("Not enough space in vector");
         }
 
-        assert_eq_hex!(0x24, packet.compute_cfg_byte(), "Bad flags byte.");
+        assert_eq_hex!(0x24, packet.compute_status().encode(), "Bad flags byte.");
 
         let p_w_golay = PacketWithGolay::from(&packet);
         let p_w_interleave = PacketWithInterleave::from(&p_w_golay);
         let p_wo_dc = PacketWithoutDC::from(&p_w_interleave);
 
-        let mut p_w_interleave2 = PacketWithInterleave { data: [0; 24] };
-        p_wo_dc.to(&mut p_w_interleave2);
+        let p_w_interleave2: PacketWithInterleave = (&p_wo_dc).into();
 
         assert_eq_hex!(p_w_interleave2.data, p_w_interleave.data);
 
-        let mut p_w_golay2 = PacketWithGolay { data: [0; 24] };
-        p_w_interleave2.to(&mut p_w_golay2);
+        let p_w_golay2: PacketWithGolay = (&p_w_interleave2).into();
         assert_eq_hex!(p_w_golay2.data, p_w_golay.data);
 
-        let mut packet2 = PacketData {
-            data: heapless::Vec::new(),
-            first: true,
-            last: true,
-        };
-        let mut err = 0;
-        p_w_golay.to(&mut packet2, &mut err);
+        let packet2: GolayDecoderResult = (&p_w_golay).into();
 
-        assert_eq_hex!(packet2.data, packet.data);
+        assert_eq_hex!(packet2.data.data, packet.data);
     }
 
     #[test]
@@ -966,8 +945,11 @@ mod test {
         // Prepare input packet data
         let mut packet = PacketData {
             data: heapless::Vec::new(),
-            first: true,
-            last: true,
+            status: PacketStatus::Legacy(PacketStatusLegacy {
+                first: true,
+                last: true,
+                checksum4: 0,
+            }),
         };
         for v in [
             0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0xe1, 0xd2, 0xc3,
@@ -975,7 +957,7 @@ mod test {
             packet.data.push(v).expect("Not enough space in vector");
         }
 
-        assert_eq_hex!(0x74, packet.compute_cfg_byte(), "Bad flags byte.");
+        assert_eq_hex!(0x74, packet.compute_status().encode(), "Bad flags byte.");
 
         let p_w_golay = PacketWithGolay::from(&packet);
 
@@ -1043,23 +1025,193 @@ mod test {
             }
         }
     }
-}
 
-pub fn decode_extended_number<const N: usize>(data: &Vec<u8, N>, start: usize) -> (u16, usize) {
-    // LSB first, MSb marks extended value
-    let mut val = 0_u16;
-    let mut shift = 0_u8;
-    let mut idx = start;
-    while (shift < 16 && idx < data.len()) {
-        let b = data[idx] as u16;
-        val += (b & 0x7F) << shift;
-        shift += 7;
-        idx += 1;
+    #[test]
+    fn test_v2_status_reversability() {
+        // As first packet
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: false,
+            listens: true,
+            naked: false,
+        });
+        assert_eq!(status, PacketStatus::Unknown.decode(status.encode()));
 
-        if ((b & 0x80) == 0) {
-            break;
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: false,
+            listens: false,
+            naked: false,
+        });
+        assert_eq!(status, PacketStatus::Unknown.decode(status.encode()));
+
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: true,
+            listens: true,
+            naked: false,
+        });
+        assert_eq!(status, PacketStatus::Unknown.decode(status.encode()));
+
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: true,
+            listens: false,
+            naked: false,
+        });
+        assert_eq!(status, PacketStatus::Unknown.decode(status.encode()));
+
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: false,
+            listens: true,
+            naked: true,
+        });
+        assert_eq!(status, PacketStatus::Unknown.decode(status.encode()));
+
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: false,
+            listens: false,
+            naked: true,
+        });
+        assert_eq!(status, PacketStatus::Unknown.decode(status.encode()));
+
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: true,
+            listens: true,
+            naked: true,
+        });
+        assert_eq!(status, PacketStatus::Unknown.decode(status.encode()));
+
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: true,
+            listens: false,
+            naked: true,
+        });
+        assert_eq!(status, PacketStatus::Unknown.decode(status.encode()));
+
+        // As second packet
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: false,
+            listens: true,
+            naked: false,
+        });
+        assert_eq!(PacketStatus::CRC8P(0x55), status.decode(0x55));
+
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: false,
+            listens: false,
+            naked: false,
+        });
+        assert_eq!(PacketStatus::CRC8P(0x55), status.decode(0x55));
+
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: false,
+            listens: true,
+            naked: true,
+        });
+        assert_eq!(PacketStatus::Data(0x55), status.decode(0x55));
+
+        let status = PacketStatus::V2(PacketStatusV2 {
+            short: false,
+            listens: false,
+            naked: true,
+        });
+        assert_eq!(PacketStatus::Data(0x55), status.decode(0x55));
+    }
+
+    #[test]
+    fn test_legacy_status_reversability() {
+        // As first packet
+        let status = PacketStatus::Legacy(PacketStatusLegacy {
+            first: true,
+            last: true,
+            checksum4: 0x5,
+        });
+        assert_eq!(status, PacketStatus::Unknown.decode(status.encode()));
+
+        let status = PacketStatus::Legacy(PacketStatusLegacy {
+            first: true,
+            last: false,
+            checksum4: 0x5,
+        });
+        assert_eq!(status, PacketStatus::Unknown.decode(status.encode()));
+
+        // As second packet
+        let status = PacketStatus::Legacy(PacketStatusLegacy {
+            first: false,
+            last: true,
+            checksum4: 0x5,
+        });
+        assert_eq!(status, status.decode(status.encode()));
+
+        let status = PacketStatus::Legacy(PacketStatusLegacy {
+            first: false,
+            last: false,
+            checksum4: 0x5,
+        });
+        assert_eq!(status, status.decode(status.encode()));
+    }
+
+    #[test]
+    fn test_crc_status_reversability() {
+        // As second packet (crc is never present as first packet)
+        let first_status = PacketStatus::V2(PacketStatusV2 {
+            short: false,
+            listens: false,
+            naked: false,
+        });
+        let status = PacketStatus::CRC8P(0x32);
+        assert_eq!(status, first_status.decode(status.encode()));
+
+        // As third packet (crc is never present as first packet)
+        let status = PacketStatus::CRC8P(0x32);
+        assert_eq!(status, status.decode(status.encode()));
+    }
+
+    #[test]
+    fn test_full_6to8_reversability() {
+        // Test each 6b symbol
+        for b in 0_u8..=0x3f {
+            let encoded = PacketWithoutDC::balance_dc(b);
+            let decoded = PacketWithoutDC::strip_dc_balance_single(encoded);
+            assert_eq!(b, decoded, "6 to 8 reversability broken for {}", b);
         }
     }
 
-    return (val, idx);
+    //TODO enable after switch to new DC balancing algorithm #[test]
+    fn test_one_bit_dc_error_impact() {
+        // Test each 6b symbol
+        for b in 0_u8..=0x3f {
+            let encoded = PacketWithoutDC::balance_dc(b);
+            for i in 0..8 {
+                let xor = 1_u8 << i;
+                let decoded = PacketWithoutDC::strip_dc_balance_single(encoded ^ xor);
+                let error_bits = b ^ decoded;
+
+                assert!(
+                    error_bits.count_ones() <= 1,
+                    "6 to 8 reverse broken with {} bit errors in 0x{:x} and bitflip mask 0x{:x}",
+                    error_bits.count_ones(),
+                    b,
+                    xor
+                );
+            }
+        }
+    }
+
+    //TODO enable after switch to new DC balancing algorithm #[test]
+    fn test_two_bit_dc_error_impact() {
+        // Test each 6b symbol
+        for b in 0_u8..=0x3f {
+            let encoded = PacketWithoutDC::balance_dc(b);
+            for i in 0..8 {
+                for j in 0..8 {
+                    if i == j {
+                        continue;
+                    }
+
+                    let xor = 1_u8 << i | 1_u8 << j;
+                    let decoded = PacketWithoutDC::strip_dc_balance_single(encoded ^ xor);
+                    let error_bits = b ^ decoded;
+                    assert!(error_bits.count_ones() <= 2, "6 to 8 reverse broken with {} bit errors in 0x{:x} and bitflip mask 0x{:x}", error_bits.count_ones(), b, xor);
+                }
+            }
+        }
+    }
 }
