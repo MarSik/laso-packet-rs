@@ -1,6 +1,8 @@
 use heapless::Vec;
 use ignore_result::Ignore;
 
+use crate::dc::{balance, strip};
+
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
 pub struct PacketStatusLegacy {
     pub first: bool,
@@ -566,76 +568,6 @@ impl From<&PacketWithGolay> for PacketWithInterleave {
     }
 }
 
-// Use 6b/8b balanced code to remove DC offset (make the avg count of ones
-// and zeros equal).
-// https://en.wikipedia.org/wiki/6b/8b_encoding
-const CODE_6TO8: [u8; 64] = [
-    0b01011001_u8,
-    0b01110001_u8,
-    0b01110010_u8,
-    0b11000011_u8,
-    0b01100101_u8,
-    0b11000101_u8,
-    0b11000110_u8,
-    0b10000111_u8,
-    0b01101001_u8,
-    0b11001001_u8,
-    0b11001010_u8,
-    0b10001011_u8,
-    0b11001100_u8,
-    0b10001101_u8,
-    0b10001110_u8,
-    0b01001011_u8,
-    0b01010011_u8,
-    0b11010001_u8,
-    0b11010010_u8,
-    0b10010011_u8,
-    0b11010100_u8,
-    0b10010101_u8,
-    0b10010110_u8,
-    0b00010111_u8,
-    0b11011000_u8,
-    0b10011001_u8,
-    0b10011010_u8,
-    0b00011011_u8,
-    0b10011100_u8,
-    0b00011101_u8,
-    0b00011110_u8,
-    0b01011100_u8,
-    0b01100011_u8,
-    0b11100001_u8,
-    0b11100010_u8,
-    0b10100011_u8,
-    0b11100100_u8,
-    0b10100101_u8,
-    0b10100110_u8,
-    0b00100111_u8,
-    0b11101000_u8,
-    0b10101001_u8,
-    0b10101010_u8,
-    0b00101011_u8,
-    0b10101100_u8,
-    0b00101101_u8,
-    0b00101110_u8,
-    0b01101100_u8,
-    0b01110100_u8,
-    0b10110001_u8,
-    0b10110010_u8,
-    0b00110011_u8,
-    0b10110100_u8,
-    0b00110101_u8,
-    0b00110110_u8,
-    0b01010110_u8,
-    0b10111000_u8,
-    0b00111001_u8,
-    0b00111010_u8,
-    0b01011010_u8,
-    0b00111100_u8,
-    0b01001101_u8,
-    0b01001110_u8,
-    0b01100110_u8,
-];
-
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 pub struct PacketWithoutDC {
     data: [u8; 32],
@@ -658,34 +590,11 @@ impl PacketWithoutDC {
     }
 
     fn balance_dc(src: u8) -> u8 {
-        CODE_6TO8[src as usize]
+        balance(src)
     }
 
     fn strip_dc_balance_single(src: u8) -> u8 {
-        // b01...... prefix
-        if (src >> 6) == 0b01 {
-            return match src & 0b111111 {
-                0b011001 => 0b000000,
-                0b110001 => 0b000001,
-                0b110010 => 0b000010,
-                0b100101 => 0b000100,
-                0b101001 => 0b001000,
-                0b010011 => 0b010000,
-                0b100011 => 0b100000,
-                0b110100 => 0b110000,
-                0b100110 => 0b111111,
-                0b001110 => 0b111110,
-                0b001101 => 0b111101,
-                0b011010 => 0b111011,
-                0b010110 => 0b110111,
-                0b101100 => 0b101111,
-                0b011100 => 0b011111,
-                0b001011 => 0b001111,
-                b => b,
-            };
-        } else {
-            return src & 0b111111;
-        }
+        strip(src)
     }
 }
 
@@ -784,9 +693,9 @@ mod test {
         };
 
         let expected: [u8; 32] = [
-            0xd2, 0x53, 0xa3, 0x95, 0xb8, 0xa9, 0xc9, 0x6c, 0x1e, 0xc3, 0x5c, 0xb8, 0xd2, 0x4b,
-            0xcc, 0x2d, 0xa5, 0x9a, 0x39, 0xe1, 0xb8, 0xa5, 0xa6, 0x96, 0x8b, 0xb1, 0x93, 0x8b,
-            0x1e, 0x3c, 0x59, 0x33,
+            0x66, 0x64, 0xa3, 0x69, 0xd4, 0xb1, 0x31, 0x9b, 0x5a, 0x23, 0x5b, 0xd4, 0x66, 0x3b,
+            0x38, 0x99, 0xa9, 0x72, 0xd1, 0xa5, 0xd4, 0xa9, 0xaa, 0x6a, 0x33, 0xe5, 0x63, 0x33,
+            0x5a, 0xd8, 0x24, 0xe3,
         ];
 
         let post = PacketWithoutDC::from(&pre);
@@ -885,24 +794,16 @@ mod test {
         let p_wo_dc = PacketWithoutDC::from(&p_w_interleave);
 
         let expected: [u8; 32] = [
-            0xac, 0xe2, 0x3c, 0x96, 0x3a, 0x65, 0x35, 0x27, 0x8d, 0xb1, 0x33, 0xaa, 0xb1, 0xe8,
-            0xa6, 0xc6, 0x72, 0xb2, 0x87, 0x2e, 0xd2, 0xa5, 0xa3, 0x99, 0xc9, 0x2d, 0xcc, 0xd8,
-            0x17, 0x3c, 0xd4, 0xe8,
+            0x98, 0xa6, 0xd8, 0x6a, 0xd2, 0x2c, 0xc9, 0xab, 0x39, 0xe5, 0xe3, 0xb2, 0xe5, 0xb4,
+            0xaa, 0x2a, 0x26, 0xe6, 0x2b, 0x9a, 0x66, 0xa9, 0xa3, 0x71, 0x31, 0x99, 0x38, 0x74,
+            0x6b, 0xd8, 0x6c, 0xb4,
         ];
 
         assert_eq_hex!(
             p_wo_dc.data,
             expected,
-            "Packet wire encoding does not match C LASO"
+            "Packet wire encoding does not match LASO v2"
         );
-    }
-
-    #[test]
-    fn test_dedc_single() {
-        for (idx, b) in CODE_6TO8.iter().enumerate() {
-            let deinterlaced = PacketWithoutDC::strip_dc_balance_single(*b);
-            assert_eq_hex!(deinterlaced, idx as u8, "DC 6b to 8b table not reversible");
-        }
     }
 
     #[test]
@@ -966,7 +867,7 @@ mod test {
             0xef, 0x62, 0x20, 0xe1, 0x6a, 0x9d, 0x2c, 0xed, 0x03, 0x74,
         ];
 
-        assert_eq_hex!(p_w_golay.data, expected, "Golay does not match LASO");
+        assert_eq_hex!(p_w_golay.data, expected, "Golay does not match LASO v2");
     }
 
     #[test]
@@ -1174,7 +1075,7 @@ mod test {
         }
     }
 
-    //TODO enable after switch to new DC balancing algorithm #[test]
+    #[test]
     fn test_one_bit_dc_error_impact() {
         // Test each 6b symbol
         for b in 0_u8..=0x3f {
@@ -1195,7 +1096,7 @@ mod test {
         }
     }
 
-    //TODO enable after switch to new DC balancing algorithm #[test]
+    #[test]
     fn test_two_bit_dc_error_impact() {
         // Test each 6b symbol
         for b in 0_u8..=0x3f {
