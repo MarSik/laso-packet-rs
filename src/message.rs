@@ -27,7 +27,7 @@ pub struct Message<const N: usize> {
 }
 
 impl<const N: usize> Message<N> {
-    pub fn sender(self) -> MessageSender<{ N }> {
+    pub fn sender<'a>(self) -> MessageSender<'a, { N }> {
         MessageSender::new(self)
     }
 

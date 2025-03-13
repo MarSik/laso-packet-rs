@@ -1,20 +1,23 @@
+use crc::{Digest, NoTable};
 use ignore_result::Ignore as _;
 
 use crate::{
     message::{BitAdder as _, Message},
     packet::{PacketData, PacketStatus, PacketStatusV2},
+    rx::LASO_CRC,
     util::{encode_id, encode_varlength},
 };
 
-#[derive(Clone, Eq, PartialEq)]
-pub struct MessageSender<const N: usize> {
+#[derive(Clone)]
+pub struct MessageSender<'a, const N: usize> {
     message: Message<{ N }>,
     // Status template for the next generated packet
     next_status: PacketStatus,
     sent: usize,
+    crc8: Digest<'a, u8, NoTable>,
 }
 
-impl<const N: usize> MessageSender<N> {
+impl<'a, const N: usize> MessageSender<'a, N> {
     pub fn new(message: Message<N>) -> Self {
         let version = message.version;
         let listens = message.will_listen;
@@ -30,6 +33,7 @@ impl<const N: usize> MessageSender<N> {
                 }
             },
             sent: 0,
+            crc8: LASO_CRC.digest(),
         }
     }
 
@@ -68,6 +72,9 @@ impl<const N: usize> MessageSender<N> {
                     p.data.push(b).ignore();
                 });
 
+                // Reset the crc digest
+                self.crc8 = LASO_CRC.digest();
+
                 if v2.naked {
                     self.next_status = PacketStatus::Data(0x00);
                 } else {
@@ -89,6 +96,7 @@ impl<const N: usize> MessageSender<N> {
             self.sent += 1;
         }
 
+        // Add padding
         while !p.data.is_full() {
             p.data.push(0u8).unwrap();
         }
@@ -109,6 +117,15 @@ impl<const N: usize> MessageSender<N> {
 
         // Re-compute packet level status
         p.status = p.compute_status();
+
+        // Update CRC of the header and CRC V2 packets
+        if let PacketStatus::V2(_) = p.status {
+            self.crc8.update(&p.data);
+            self.crc8.update(&[p.status.encode()]);
+        } else if let PacketStatus::CRC8P(crc) = &mut p.status {
+            self.crc8.update(&p.data);
+            *crc = self.crc8.clone().finalize();
+        }
 
         p
     }

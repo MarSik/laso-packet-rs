@@ -1,11 +1,27 @@
+use crc::Algorithm;
+use crc::Digest;
+use crc::NoTable;
+
 use crate::message::Message;
 use crate::message::MessageVersion;
 use crate::packet::GolayDecoderResult;
 use crate::packet::PacketStatus;
 use crate::util::decode_extended_number;
 
-#[derive(Clone, Eq, PartialEq, Default)]
-pub struct RxMessage<const N: usize> {
+const CRC8K_3: Algorithm<u8> = Algorithm {
+    width: 8,
+    poly: 0xd5,
+    init: 0x00,
+    refin: false,
+    refout: false,
+    xorout: 0x00,
+    check: 0x00,
+    residue: 0x00,
+};
+pub const LASO_CRC: crc::Crc<u8, NoTable> = crc::Crc::<u8, NoTable>::new(&CRC8K_3);
+
+#[derive(Clone)]
+pub struct RxMessage<'a, const N: usize> {
     pub msg: Message<N>,
     pub naked: bool,
     pub rssi: u8,
@@ -13,7 +29,21 @@ pub struct RxMessage<const N: usize> {
     pub errors: u8,
 
     last_status: PacketStatus,
-    crc8: u8,
+    crc8: Digest<'a, u8, NoTable>,
+}
+
+impl<'a, const N: usize> Default for RxMessage<'a, N> {
+    fn default() -> Self {
+        Self {
+            crc8: LASO_CRC.digest(),
+            msg: Default::default(),
+            naked: Default::default(),
+            rssi: Default::default(),
+            lna: Default::default(),
+            errors: Default::default(),
+            last_status: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -28,7 +58,7 @@ pub enum RxDecodeError {
     InternalOnly,
 }
 
-impl<const N: usize> RxMessage<N> {
+impl<'a, const N: usize> RxMessage<'a, N> {
     pub fn append(&mut self, dec: &GolayDecoderResult) -> Result<(), RxDecodeError> {
         let p = &dec.data;
         // Unexpected packet
@@ -94,10 +124,21 @@ impl<const N: usize> RxMessage<N> {
                 } else {
                     self.msg.version = MessageVersion::V2;
                 }
+
+                // Feed data into CRC, including status byte
+                self.crc8.update(&p.data);
+                self.crc8.update(&[p.status.encode()]);
             }
             PacketStatus::CRC8P(crc) => {
-                // TODO! Test checksum
-                // on fail return Err(CrcFailed)
+                // Feed data into CRC, excluding status byte!
+                self.crc8.update(&p.data);
+
+                // Test checksum without modifying the digest
+                // this allows using the same running digest
+                // for followup packets
+                if crc != self.crc8.clone().finalize() {
+                    return Err(RxDecodeError::CrcFailed);
+                }
             }
             PacketStatus::Unknown => return Err(RxDecodeError::UnknownPacket),
             PacketStatus::Internal => return Err(RxDecodeError::InternalOnly),
@@ -123,7 +164,7 @@ impl<const N: usize> RxMessage<N> {
     }
 }
 
-impl<const N: usize> From<Message<N>> for RxMessage<N> {
+impl<'a, const N: usize> From<Message<N>> for RxMessage<'a, N> {
     fn from(msg: Message<N>) -> Self {
         Self {
             msg,

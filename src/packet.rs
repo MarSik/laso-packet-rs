@@ -668,8 +668,6 @@ impl From<&PacketWithInterleave> for PacketWithoutDC {
 
 #[cfg(test)]
 mod test {
-    use core::error;
-
     use super::*;
     use assert_hex::assert_eq_hex;
     use bitvec::prelude::*;
