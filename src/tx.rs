@@ -26,6 +26,7 @@ impl<'a, const N: usize> MessageSender<'a, N> {
         Self {
             message,
             next_status: match version {
+                #[cfg(feature = "legacy")]
                 crate::message::MessageVersion::LegacyLaso => PacketStatus::legacy(true, true),
                 crate::message::MessageVersion::V2 => {
                     PacketStatus::V2(PacketStatusV2::default().listens(listens))
@@ -54,6 +55,7 @@ impl<'a, const N: usize> MessageSender<'a, N> {
         let mut capacity = p.data.capacity();
 
         match p.status {
+            #[cfg(feature = "legacy")]
             PacketStatus::Legacy(legacy) => {
                 if legacy.first {
                     // Queue source address and packet type
@@ -120,6 +122,7 @@ impl<'a, const N: usize> MessageSender<'a, N> {
         }
 
         // Fill in continuation markers
+        #[cfg(feature = "legacy")]
         if let PacketStatus::Legacy(legacy) = &mut p.status {
             legacy.last = !self.data_to_send();
         }

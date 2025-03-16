@@ -3,6 +3,7 @@ use ignore_result::Ignore;
 
 use crate::dc::{balance, strip};
 
+#[cfg(feature = "legacy")]
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
 pub struct PacketStatusLegacy {
     pub first: bool,
@@ -49,6 +50,7 @@ impl PacketStatusV2 {
 #[repr(u8)]
 pub enum PacketStatus {
     // The original LASO packet format
+    #[cfg(feature = "legacy")]
     Legacy(PacketStatusLegacy),
     // Packets that support naked and listen modes
     V2(PacketStatusV2),
@@ -68,6 +70,7 @@ pub enum PacketStatus {
 impl PacketStatus {
     pub fn finished(&self) -> bool {
         match self {
+            #[cfg(feature = "legacy")]
             PacketStatus::Legacy(legacy) => legacy.last,
             PacketStatus::V2(v2) => v2.short,
             PacketStatus::CRC8P(_) => false,
@@ -80,6 +83,7 @@ impl PacketStatus {
 
     pub fn decode(&self, next: u8) -> Self {
         match self {
+            #[cfg(feature = "legacy")]
             PacketStatus::Legacy(_) => PacketStatus::Legacy(PacketStatusLegacy {
                 first: next & 0x4 > 0,
                 last: next & 0x1 == 0,
@@ -95,21 +99,22 @@ impl PacketStatus {
             PacketStatus::Unknown => {
                 // The first packet in the legacy status mode always sets the "first" flag, use it to distinguish
                 // the two versions
+                #[cfg(feature = "legacy")]
                 if next & 0b100 > 0 {
                     // Legacy
-                    PacketStatus::Legacy(PacketStatusLegacy {
+                    return PacketStatus::Legacy(PacketStatusLegacy {
                         first: next & 0x4 > 0,
                         last: next & 0x1 == 0,
                         checksum4: next >> 4,
-                    })
-                } else {
-                    // V2
-                    PacketStatus::V2(PacketStatusV2 {
-                        short: next & 0x1 == 0,
-                        listens: next & 0x8 > 0,
-                        naked: next & 0x2 > 0,
-                    })
+                    });
                 }
+
+                // V2
+                PacketStatus::V2(PacketStatusV2 {
+                    short: next & 0x1 == 0,
+                    listens: next & 0x8 > 0,
+                    naked: next & 0x2 > 0,
+                })
             }
             PacketStatus::CRC8P(_) => Self::CRC8P(next),
             PacketStatus::Raw(_) => Self::Raw(next),
@@ -120,6 +125,7 @@ impl PacketStatus {
 
     pub fn encode(&self) -> u8 {
         match self {
+            #[cfg(feature = "legacy")]
             PacketStatus::Legacy(legacy) => {
                 let mut flags: u8 = 0;
                 if legacy.first {
@@ -135,6 +141,10 @@ impl PacketStatus {
                 if status_v2.listens {
                     flags += 0x8;
                 }
+
+                // 0x4 must not be set to distinguish this from
+                // the legacy format
+
                 if status_v2.naked {
                     flags += 0x2;
                 }
@@ -150,6 +160,7 @@ impl PacketStatus {
         }
     }
 
+    #[cfg(feature = "legacy")]
     pub(crate) fn legacy(first: bool, last: bool) -> PacketStatus {
         PacketStatus::Legacy(PacketStatusLegacy {
             first,
@@ -173,6 +184,7 @@ impl PacketData {
         }
     }
 
+    #[cfg(feature = "legacy")]
     fn checksum(acc: u8, v: &u8) -> u8 {
         acc.overflowing_add(*v).0
     }
@@ -191,6 +203,7 @@ impl PacketData {
     // - The first packet in new protocol mode, the additional packets have no status
     pub fn compute_status(&self) -> PacketStatus {
         match self.status {
+            #[cfg(feature = "legacy")]
             PacketStatus::Legacy(legacy) => {
                 let mut checksum8: u8 = self.data.iter().fold(0x55u8, Self::checksum);
 
@@ -790,6 +803,7 @@ mod test {
         );
     }
 
+    #[cfg(feature = "legacy")]
     #[test]
     fn test_packet() {
         // Prepare input packet data
@@ -826,6 +840,7 @@ mod test {
         );
     }
 
+    #[cfg(feature = "legacy")]
     #[test]
     fn test_simple_packet() {
         // Prepare input packet data
@@ -849,19 +864,55 @@ mod test {
         let p_w_interleave = PacketWithInterleave::from(&p_w_golay);
         let p_wo_dc = PacketWithoutDC::from(&p_w_interleave);
 
-        let p_w_interleave2: PacketWithInterleave = (&p_wo_dc).into();
+        let p_w_interleave2 = PacketWithInterleave::from(&p_wo_dc);
 
         assert_eq_hex!(p_w_interleave2.data, p_w_interleave.data);
 
-        let p_w_golay2: PacketWithGolay = (&p_w_interleave2).into();
+        let p_w_golay2 = PacketWithGolay::from(&p_w_interleave2);
         assert_eq_hex!(p_w_golay2.data, p_w_golay.data);
 
-        let packet2: GolayDecoderResult = (&p_w_golay).into();
+        let packet2 = GolayDecoderResult::from(&p_w_golay);
 
         assert_eq_hex!(packet2.data.data, packet.data);
     }
 
     #[test]
+    fn test_v2_packet() {
+        // Prepare input packet data
+        let mut packet = PacketData {
+            data: heapless::Vec::new(),
+            status: PacketStatus::V2(PacketStatusV2 {
+                short: false,
+                naked: false,
+                listens: false,
+            }),
+        };
+        for v in [
+            0x81, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
+        ] {
+            packet.data.push(v).expect("Not enough space in vector");
+        }
+
+        assert_eq_hex!(0x01, packet.compute_status().encode(), "Bad flags byte.");
+
+        let p_w_golay = PacketWithGolay::from(&packet);
+        let p_w_interleave = PacketWithInterleave::from(&p_w_golay);
+        let p_wo_dc = PacketWithoutDC::from(&p_w_interleave);
+
+        let p_w_interleave2 = PacketWithInterleave::from(&p_wo_dc);
+
+        assert_eq_hex!(p_w_interleave2.data, p_w_interleave.data);
+
+        let p_w_golay2 = PacketWithGolay::from(&p_w_interleave2);
+        assert_eq_hex!(p_w_golay2.data, p_w_golay.data);
+
+        let packet2 = GolayDecoderResult::from(&p_w_golay);
+
+        assert_eq_hex!(packet2.data.data, packet.data);
+    }
+
+    #[test]
+    #[cfg(feature = "legacy")]
     fn test_golay_laso() {
         // Prepare input packet data
         let mut packet = PacketData {
@@ -1037,6 +1088,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "legacy")]
     fn test_legacy_status_reversability() {
         // As first packet
         let status = PacketStatus::Legacy(PacketStatusLegacy {

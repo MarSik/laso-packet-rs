@@ -35,10 +35,12 @@ fn test_msg_reversal(msg: &Message<22>) {
 }
 
 #[test]
+#[cfg(feature = "legacy")]
 pub fn test_short_laso_reversal() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
     msg.packet_type = Some(LasoPacketType::GsmStatus as u16);
+    msg.version = MessageVersion::Legacy;
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
     // Padding
@@ -48,11 +50,13 @@ pub fn test_short_laso_reversal() {
     test_msg_reversal(&msg);
 }
 
+#[cfg(feature = "legacy")]
 #[test]
 pub fn test_long_laso_reversal() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
     msg.packet_type = Some(LasoPacketType::GsmStatus as u16);
+    msg.version = MessageVersion::Legacy;
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
     msg.add(0x0405_u16);

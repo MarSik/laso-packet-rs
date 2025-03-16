@@ -62,6 +62,7 @@ impl<'a, const N: usize> RxMessage<'a, N> {
     pub fn append(&mut self, dec: &GolayDecoderResult) -> Result<(), RxDecodeError> {
         let p = &dec.data;
         // Unexpected packet
+        #[cfg(feature = "legacy")]
         if let PacketStatus::Legacy(legacy) = self.last_status {
             if legacy.last {
                 return Err(RxDecodeError::Unexpected);
@@ -96,6 +97,7 @@ impl<'a, const N: usize> RxMessage<'a, N> {
         let mut size: usize = p.data.len();
 
         match cur_status {
+            #[cfg(feature = "legacy")]
             PacketStatus::Legacy(legacy) => {
                 // First packet flag when data already recorded?
                 if !self.msg.data.is_empty() && legacy.first {

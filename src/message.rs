@@ -9,8 +9,9 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum MessageVersion {
-    #[default]
+    #[cfg(feature = "legacy")]
     LegacyLaso,
+    #[default]
     V2,
     V2Short,
     Naked,
