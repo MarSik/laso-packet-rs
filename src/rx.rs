@@ -86,7 +86,14 @@ impl<'a, const N: usize> RxMessage<'a, N> {
             return Err(RxDecodeError::Invalid);
         }
 
+        // How many bytes were already consumed
+        // from the received data for headers and
+        // protocol
         let mut skip = 0;
+
+        // How many data bytes are present in the
+        // received message, including `skip`
+        let mut size: usize = p.data.len();
 
         match cur_status {
             PacketStatus::Legacy(legacy) => {
@@ -121,13 +128,32 @@ impl<'a, const N: usize> RxMessage<'a, N> {
 
                 if self.naked {
                     self.msg.version = MessageVersion::Naked;
+                } else if v2.short {
+                    self.msg.version = MessageVersion::V2Short;
+                    // Subtract 1 from size, the last data byte contains CRC
+                    // for the short packet
+                    size -= 1;
                 } else {
                     self.msg.version = MessageVersion::V2;
                 }
 
                 // Feed data into CRC, including status byte
-                self.crc8.update(&p.data);
+                self.crc8.update(&p.data[..size]);
                 self.crc8.update(&[p.status.encode()]);
+
+                if v2.short {
+                    // This is fine, because 1 was subtracted
+                    // from size above. It now points to the last
+                    // byte that contains CRC
+                    let crc = p.data[size];
+
+                    // Test checksum without modifying the digest
+                    // this allows using the same running digest
+                    // for followup packets
+                    if crc != self.crc8.clone().finalize() {
+                        return Err(RxDecodeError::CrcFailed);
+                    }
+                }
             }
             PacketStatus::CRC8P(crc) => {
                 // Feed data into CRC, excluding status byte!
@@ -152,7 +178,7 @@ impl<'a, const N: usize> RxMessage<'a, N> {
         self.errors = self.errors.saturating_add(dec.errors as u8);
         self.errors = self.errors.saturating_add(dec.parity_errors as u8);
 
-        for b in &p.data[skip..] {
+        for b in &p.data[skip..size] {
             self.msg.data.push(*b).map_err(|_| RxDecodeError::Full)?;
         }
 

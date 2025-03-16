@@ -13,6 +13,8 @@ pub struct MessageSender<'a, const N: usize> {
     message: Message<{ N }>,
     // Status template for the next generated packet
     next_status: PacketStatus,
+    // Some messages need a second packet even when empty
+    force_next: bool,
     sent: usize,
     crc8: Digest<'a, u8, NoTable>,
 }
@@ -28,11 +30,15 @@ impl<'a, const N: usize> MessageSender<'a, N> {
                 crate::message::MessageVersion::V2 => {
                     PacketStatus::V2(PacketStatusV2::default().listens(listens))
                 }
+                crate::message::MessageVersion::V2Short => {
+                    PacketStatus::V2(PacketStatusV2::short().listens(listens))
+                }
                 crate::message::MessageVersion::Naked => {
                     PacketStatus::V2(PacketStatusV2::naked().listens(listens))
                 }
             },
             sent: 0,
+            force_next: false,
             crc8: LASO_CRC.digest(),
         }
     }
@@ -45,6 +51,7 @@ impl<'a, const N: usize> MessageSender<'a, N> {
         let mut p = PacketData::new();
 
         p.status = self.next_status;
+        let mut capacity = p.data.capacity();
 
         match p.status {
             PacketStatus::Legacy(legacy) => {
@@ -79,6 +86,16 @@ impl<'a, const N: usize> MessageSender<'a, N> {
                     self.next_status = PacketStatus::Data(0x00);
                 } else {
                     self.next_status = PacketStatus::CRC8P(0x00);
+
+                    if v2.short {
+                        // Subtract one from capacity for short packets
+                        // The last byte will contain CRC8
+                        capacity -= 1;
+                    }
+
+                    // When short is not set, make sure the next packet will
+                    // be generated even when empty
+                    self.force_next = !v2.short;
                 }
             }
             // The following are end states, no change for follow-up packets
@@ -89,7 +106,8 @@ impl<'a, const N: usize> MessageSender<'a, N> {
             PacketStatus::Internal => (),
         };
 
-        while !p.data.is_full() && self.sent < self.message.data.len() {
+        // Fill in data
+        while p.data.len() < capacity && self.sent < self.message.data.len() {
             p.data
                 .push(*self.message.data.get(self.sent).unwrap())
                 .unwrap();
@@ -97,16 +115,13 @@ impl<'a, const N: usize> MessageSender<'a, N> {
         }
 
         // Add padding
-        while !p.data.is_full() {
+        while p.data.len() < capacity {
             p.data.push(0u8).unwrap();
         }
 
         // Fill in continuation markers
         if let PacketStatus::Legacy(legacy) = &mut p.status {
             legacy.last = !self.data_to_send();
-        }
-        if let PacketStatus::V2(v2) = &mut p.status {
-            v2.short = !self.data_to_send();
         }
 
         // Add one extra data byte when in naked mode
@@ -119,9 +134,16 @@ impl<'a, const N: usize> MessageSender<'a, N> {
         p.status = p.compute_status();
 
         // Update CRC of the header and CRC V2 packets
-        if let PacketStatus::V2(_) = p.status {
+        if let PacketStatus::V2(v2) = p.status {
             self.crc8.update(&p.data);
             self.crc8.update(&[p.status.encode()]);
+
+            // Fill in short V2 packet CRC
+            if v2.short && !v2.naked {
+                // The last data byte is CRC8!
+                let crc = self.crc8.clone().finalize();
+                p.data.push(crc).ignore();
+            }
         } else if let PacketStatus::CRC8P(crc) = &mut p.status {
             self.crc8.update(&p.data);
             *crc = self.crc8.clone().finalize();

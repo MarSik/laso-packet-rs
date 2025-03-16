@@ -36,6 +36,13 @@ impl PacketStatusV2 {
     pub fn listens(self, listens: bool) -> Self {
         Self { listens, ..self }
     }
+
+    pub(crate) fn short() -> PacketStatusV2 {
+        Self {
+            short: true,
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]

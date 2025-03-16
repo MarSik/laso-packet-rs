@@ -12,6 +12,7 @@ pub enum MessageVersion {
     #[default]
     LegacyLaso,
     V2,
+    V2Short,
     Naked,
 }
 
