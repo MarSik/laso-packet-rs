@@ -60,8 +60,14 @@ impl<'a, const N: usize> MessageSender<'a, N> {
                 if legacy.first {
                     // Queue source address and packet type
                     // First packet always has enough space for this
-                    p.data
-                        .add(encode_id(self.message.packet_type.unwrap_or(0x00)));
+                    match self.message.packet_type {
+                        Some(t) => {
+                            encode_varlength(t, |b| {
+                                p.data.push(b).ignore();
+                            });
+                        }
+                        None => p.data.push(0x00_u8),
+                    }
                     encode_varlength(self.message.source_address as u32, |b| {
                         p.data.push(b).ignore();
                     });
@@ -73,8 +79,14 @@ impl<'a, const N: usize> MessageSender<'a, N> {
                 if !v2.naked {
                     // Queue source address and packet type
                     // First packet always has enough space for this
-                    p.data
-                        .add(encode_id(self.message.packet_type.unwrap_or(0x00)));
+                    match self.message.packet_type {
+                        Some(t) => {
+                            encode_varlength(t, |b| {
+                                p.data.push(b).ignore();
+                            });
+                        }
+                        None => p.data.push(0x00).ignore(), // TODO set no type flag
+                    }
                 }
 
                 encode_varlength(self.message.source_address as u32, |b| {

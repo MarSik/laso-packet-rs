@@ -45,11 +45,11 @@ fn test_msg_reversal_w_corruption(msg: &Message<22>) {
 pub fn test_short_laso_reversal_w_noise() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
-    msg.packet_type = Some(LasoPacketType::GsmStatus as u16);
+    msg.packet_type = Some(LasoPacketType::GsmStatus.into());
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
     // Padding
-    for _ in 0..5 {
+    for _ in 0..6 {
         msg.add(0x00_u8);
     }
     test_msg_reversal_w_corruption(&msg);
@@ -59,7 +59,7 @@ pub fn test_short_laso_reversal_w_noise() {
 pub fn test_long_laso_reversal_w_noise() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
-    msg.packet_type = Some(LasoPacketType::GsmStatus as u16);
+    msg.packet_type = Some(LasoPacketType::GsmStatus.into());
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
     msg.add(0x0405_u16);
@@ -67,7 +67,7 @@ pub fn test_long_laso_reversal_w_noise() {
     msg.add(0x0809_u16);
     msg.add(0x0a0b_u16);
     // Padding
-    for _ in 0..8 {
+    for _ in 0..9 {
         msg.add(0x00_u8);
     }
     test_msg_reversal_w_corruption(&msg);
@@ -77,12 +77,12 @@ pub fn test_long_laso_reversal_w_noise() {
 pub fn test_short_v2_reversal_w_noise() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
-    msg.packet_type = Some(LasoPacketType::GsmStatus as u16);
+    msg.packet_type = Some(LasoPacketType::GsmStatus.into());
     msg.version = MessageVersion::V2;
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
     // Padding
-    for _ in 0..5 {
+    for _ in 0..6 {
         msg.add(0x00_u8);
     }
     test_msg_reversal_w_corruption(&msg);
@@ -92,7 +92,7 @@ pub fn test_short_v2_reversal_w_noise() {
 pub fn test_long_v2_reversal_w_noise() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
-    msg.packet_type = Some(LasoPacketType::GsmStatus as u16);
+    msg.packet_type = Some(LasoPacketType::GsmStatus.into());
     msg.version = MessageVersion::V2;
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
@@ -101,7 +101,7 @@ pub fn test_long_v2_reversal_w_noise() {
     msg.add(0x0809_u16);
     msg.add(0x0a0b_u16);
     // Padding
-    for _ in 0..8 {
+    for _ in 0..9 {
         msg.add(0x00_u8);
     }
     test_msg_reversal_w_corruption(&msg);

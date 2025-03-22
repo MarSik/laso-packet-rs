@@ -39,12 +39,12 @@ fn test_msg_reversal(msg: &Message<22>) {
 pub fn test_short_laso_reversal() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
-    msg.packet_type = Some(LasoPacketType::GsmStatus as u16);
+    msg.packet_type = Some(LasoPacketType::GsmStatus.into());
     msg.version = MessageVersion::Legacy;
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
     // Padding
-    for _ in 0..5 {
+    for _ in 0..6 {
         msg.add(0x00_u8);
     }
     test_msg_reversal(&msg);
@@ -55,7 +55,7 @@ pub fn test_short_laso_reversal() {
 pub fn test_long_laso_reversal() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
-    msg.packet_type = Some(LasoPacketType::GsmStatus as u16);
+    msg.packet_type = Some(LasoPacketType::GsmStatus.into());
     msg.version = MessageVersion::Legacy;
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
@@ -74,23 +74,8 @@ pub fn test_long_laso_reversal() {
 pub fn test_short_v2_reversal() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
-    msg.packet_type = Some(LasoPacketType::GsmStatus as u16);
+    msg.packet_type = Some(LasoPacketType::GsmStatus.into());
     msg.version = MessageVersion::V2Short;
-    msg.add(0x01_u8);
-    msg.add(0x0203_u16);
-    // Padding
-    for _ in 0..4 {
-        msg.add(0x00_u8);
-    }
-    test_msg_reversal(&msg);
-}
-
-#[test]
-pub fn test_long_short_v2_reversal() {
-    let mut msg: Message<22> = Message::default();
-    msg.source_address = 0x55;
-    msg.packet_type = Some(LasoPacketType::GsmStatus as u16);
-    msg.version = MessageVersion::V2;
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
     // Padding
@@ -101,10 +86,25 @@ pub fn test_long_short_v2_reversal() {
 }
 
 #[test]
+pub fn test_long_short_v2_reversal() {
+    let mut msg: Message<22> = Message::default();
+    msg.source_address = 0x55;
+    msg.packet_type = Some(LasoPacketType::GsmStatus.into());
+    msg.version = MessageVersion::V2;
+    msg.add(0x01_u8);
+    msg.add(0x0203_u16);
+    // Padding
+    for _ in 0..6 {
+        msg.add(0x00_u8);
+    }
+    test_msg_reversal(&msg);
+}
+
+#[test]
 pub fn test_long_v2_reversal() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
-    msg.packet_type = Some(LasoPacketType::GsmStatus as u16);
+    msg.packet_type = Some(LasoPacketType::GsmStatus.into());
     msg.version = MessageVersion::V2;
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
@@ -113,7 +113,7 @@ pub fn test_long_v2_reversal() {
     msg.add(0x0809_u16);
     msg.add(0x0a0b_u16);
     // Padding
-    for _ in 0..8 {
+    for _ in 0..9 {
         msg.add(0x00_u8);
     }
     test_msg_reversal(&msg);

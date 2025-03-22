@@ -18,13 +18,13 @@ pub const fn encode_id(mut val: u16) -> u16 {
     out
 }
 
-pub fn decode_extended_number(data: &[u8], start: usize) -> (u16, usize) {
+pub fn decode_extended_number(data: &[u8], start: usize) -> (u32, usize) {
     // LSB first, MSb marks extended value
-    let mut val = 0_u16;
+    let mut val = 0_u32;
     let mut shift = 0_u8;
     let mut idx = start;
     while shift < 16 && idx < data.len() {
-        let b = data[idx] as u16;
+        let b = data[idx] as u32;
         val += (b & 0x7F) << shift;
         shift += 7;
         idx += 1;

@@ -23,8 +23,8 @@ pub enum MessageVersion {
 pub struct Message<const N: usize> {
     pub version: MessageVersion,
     pub data: Vec<u8, { N }>,
-    pub source_address: u16,
-    pub packet_type: Option<u16>,
+    pub source_address: u32,
+    pub packet_type: Option<u32>,
     pub will_listen: bool,
 }
 
