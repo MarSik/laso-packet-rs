@@ -25,8 +25,9 @@ pub const fn strip(enc: u8) -> u8 {
     (enc & 0b11000000) >> 2 | (enc & 0b00011000) >> 1 | (enc & 0b00000011)
 }
 
+#[cfg(test)]
 mod test {
-    use crate::dc::{balance, strip};
+    use super::*;
 
     #[test]
     fn test_full_reversability() {

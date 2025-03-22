@@ -1,6 +1,7 @@
 use core::ops::Shr;
 
 use heapless::Vec;
+use ignore_result::Ignore as _;
 
 use crate::{
     tx::MessageSender,
@@ -54,13 +55,13 @@ impl<const N: usize> BitAdder for Vec<u8, { N }> {
             bits -= 8;
             let bw = (v >> bits).into();
             let b8 = bw.into();
-            self.push(b8);
+            self.push(b8).ignore();
         }
     }
 
     fn add_varlen(&mut self, v: u32) {
         encode_varlength(v, |b| {
-            self.push(b);
+            self.push(b).ignore();
         });
     }
 }

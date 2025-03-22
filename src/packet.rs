@@ -500,7 +500,7 @@ impl PacketWithInterleave {
     }
 
     #[inline(always)]
-    fn g3B(msb: u8, isb: u8, lsb: u8) -> u32 {
+    fn g3byte(msb: u8, isb: u8, lsb: u8) -> u32 {
         ((msb as u32) << 16) + ((isb as u32) << 8) + (lsb as u32)
     }
 
@@ -508,7 +508,7 @@ impl PacketWithInterleave {
         ((w & 0x1) as u8) << sh
     }
 
-    fn _nb(w: u8, b: usize) -> u32 {
+    fn nthbit(w: u8, b: usize) -> u32 {
         ((w >> b) & 0x1) as u32
     }
 }
@@ -535,14 +535,14 @@ impl From<&PacketWithInterleave> for PacketWithGolay {
             d6 <<= 1;
             d7 <<= 1;
 
-            d0 |= PacketWithInterleave::_nb(p.data[23 - src], 7);
-            d1 |= PacketWithInterleave::_nb(p.data[23 - src], 6);
-            d2 |= PacketWithInterleave::_nb(p.data[23 - src], 5);
-            d3 |= PacketWithInterleave::_nb(p.data[23 - src], 4);
-            d4 |= PacketWithInterleave::_nb(p.data[23 - src], 3);
-            d5 |= PacketWithInterleave::_nb(p.data[23 - src], 2);
-            d6 |= PacketWithInterleave::_nb(p.data[23 - src], 1);
-            d7 |= PacketWithInterleave::_nb(p.data[23 - src], 0);
+            d0 |= PacketWithInterleave::nthbit(p.data[23 - src], 7);
+            d1 |= PacketWithInterleave::nthbit(p.data[23 - src], 6);
+            d2 |= PacketWithInterleave::nthbit(p.data[23 - src], 5);
+            d3 |= PacketWithInterleave::nthbit(p.data[23 - src], 4);
+            d4 |= PacketWithInterleave::nthbit(p.data[23 - src], 3);
+            d5 |= PacketWithInterleave::nthbit(p.data[23 - src], 2);
+            d6 |= PacketWithInterleave::nthbit(p.data[23 - src], 1);
+            d7 |= PacketWithInterleave::nthbit(p.data[23 - src], 0);
         }
 
         for (dst, val) in [
@@ -570,14 +570,14 @@ impl From<&PacketWithGolay> for PacketWithInterleave {
     fn from(p: &PacketWithGolay) -> Self {
         let mut ret = PacketWithInterleave { data: [0u8; 24] };
 
-        let mut src_a = Self::g3B(p.data[0], p.data[1], p.data[2]);
-        let mut src_b = Self::g3B(p.data[3], p.data[4], p.data[5]);
-        let mut src_c = Self::g3B(p.data[6], p.data[7], p.data[8]);
-        let mut src_d = Self::g3B(p.data[9], p.data[10], p.data[11]);
-        let mut src_e = Self::g3B(p.data[12], p.data[13], p.data[14]);
-        let mut src_f = Self::g3B(p.data[15], p.data[16], p.data[17]);
-        let mut src_g = Self::g3B(p.data[18], p.data[19], p.data[20]);
-        let mut src_h = Self::g3B(p.data[21], p.data[22], p.data[23]);
+        let mut src_a = Self::g3byte(p.data[0], p.data[1], p.data[2]);
+        let mut src_b = Self::g3byte(p.data[3], p.data[4], p.data[5]);
+        let mut src_c = Self::g3byte(p.data[6], p.data[7], p.data[8]);
+        let mut src_d = Self::g3byte(p.data[9], p.data[10], p.data[11]);
+        let mut src_e = Self::g3byte(p.data[12], p.data[13], p.data[14]);
+        let mut src_f = Self::g3byte(p.data[15], p.data[16], p.data[17]);
+        let mut src_g = Self::g3byte(p.data[18], p.data[19], p.data[20]);
+        let mut src_h = Self::g3byte(p.data[21], p.data[22], p.data[23]);
 
         for i in 0..24 {
             ret.data[i] = Self::g1b(src_a, 7)

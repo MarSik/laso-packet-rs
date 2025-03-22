@@ -61,6 +61,7 @@ impl From<u32> for IntoLeastSigByte {
     }
 }
 
+#[cfg(test)]
 mod test {
     use crate::{message::Message, util::encode_id};
 

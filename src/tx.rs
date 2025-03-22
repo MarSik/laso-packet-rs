@@ -1,12 +1,10 @@
 use crc::{Digest, NoTable};
 use ignore_result::Ignore as _;
 
-use crate::{
-    message::{BitAdder as _, Message},
-    packet::{PacketData, PacketStatus, PacketStatusV2},
-    rx::LASO_CRC,
-    util::{encode_id, encode_varlength},
-};
+use crate::message::Message;
+use crate::packet::{PacketData, PacketStatus, PacketStatusV2};
+use crate::rx::LASO_CRC;
+use crate::util::encode_varlength;
 
 #[derive(Clone)]
 pub struct MessageSender<'a, const N: usize> {
@@ -66,7 +64,7 @@ impl<'a, const N: usize> MessageSender<'a, N> {
                                 p.data.push(b).ignore();
                             });
                         }
-                        None => p.data.push(0x00_u8),
+                        None => p.data.push(0x00_u8).ignore(),
                     }
                     encode_varlength(self.message.source_address as u32, |b| {
                         p.data.push(b).ignore();
