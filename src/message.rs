@@ -2,13 +2,14 @@ use core::ops::Shr;
 
 use heapless::Vec;
 use ignore_result::Ignore as _;
+use ufmt::derive::uDebug;
 
 use crate::{
     tx::MessageSender,
     util::{encode_varlength, IntoLeastSigByte},
 };
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(uDebug, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum MessageVersion {
     #[cfg(feature = "legacy")]
     LegacyLaso,

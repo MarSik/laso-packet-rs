@@ -1,6 +1,7 @@
 use crc::Algorithm;
 use crc::Digest;
 use crc::NoTable;
+use ufmt::derive::uDebug;
 
 use crate::message::Message;
 use crate::message::MessageVersion;
@@ -46,7 +47,7 @@ impl<'a, const N: usize> Default for RxMessage<'a, N> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(uDebug, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RxDecodeError {
     OutOfOrder,
     Unexpected,

@@ -1,18 +1,18 @@
 use heapless::Vec;
 use ignore_result::Ignore;
+use ufmt::derive::uDebug;
 
 use crate::dc::{balance, strip};
 
 #[cfg(feature = "legacy")]
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
+#[derive(uDebug, Clone, Copy, Eq, PartialEq, Debug, Default)]
 pub struct PacketStatusLegacy {
     pub first: bool,
     pub last: bool,
     pub checksum4: u8,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
-
+#[derive(uDebug, Clone, Copy, Eq, PartialEq, Debug, Default)]
 pub struct PacketStatusV2 {
     pub short: bool, // Just one packet
 
@@ -46,7 +46,7 @@ impl PacketStatusV2 {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
+#[derive(uDebug, Clone, Copy, Eq, PartialEq, Debug, Default)]
 #[repr(u8)]
 pub enum PacketStatus {
     // The original LASO packet format
