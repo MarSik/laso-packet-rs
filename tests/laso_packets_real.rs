@@ -1,8 +1,11 @@
 pub(crate) use futures_lite::future::block_on;
 use laso_packet::{
     behavior::decode_with_breaks,
+    laso::LasoPacketType,
+    message::{Message, MessageVersion},
     packet::PacketStatus,
     rx::{RxDecodeError, RxMessage},
+    tx::MessageSender,
 };
 
 fn test_msg_decode(from_radio: &[u8; 64]) -> Result<RxMessage<23>, RxDecodeError> {
@@ -29,6 +32,52 @@ fn test_msg_decode(from_radio: &[u8; 64]) -> Result<RxMessage<23>, RxDecodeError
     Ok(rx)
 }
 
+fn test_msg_reversal_w_rx_length<const N: usize>(msg: &Message<N>, tx_len: usize, rx_len: usize) {
+    let mut wire_packets = Vec::new();
+    let mut radio_packets: Vec<[u8; 32]> = Vec::new();
+
+    // Encoding and transmit
+    let mut sender = MessageSender::new(msg.clone());
+    while sender.data_to_send() {
+        let wire_packet = sender.packet();
+        wire_packets.push(wire_packet.clone());
+        radio_packets.push(wire_packet.encode_for_transmit().data());
+    }
+
+    assert_eq!(
+        tx_len,
+        radio_packets.len(),
+        "Should have sent only {} radio packets (sent {})",
+        tx_len,
+        radio_packets.len()
+    );
+
+    while rx_len > radio_packets.len() {
+        radio_packets.push([0xaa_u8; 32]);
+    }
+
+    // Reception and decode
+    let mut rx: RxMessage<N> = RxMessage::default();
+    for from_radio in radio_packets {
+        let p = block_on(decode_with_breaks(&from_radio));
+        assert!(p.parity_errors == 0);
+        assert!(p.errors == 0);
+
+        match rx.append(&p) {
+            Ok(status) => {
+                if status.finished() {
+                    break;
+                }
+            }
+            Err(err) => {
+                panic!("Rx decode error: {:?}", err);
+            }
+        }
+    }
+
+    assert_eq!(*msg, rx.msg);
+}
+
 #[test]
 pub fn test_beacon_1() {
     let rx = [
@@ -39,4 +88,20 @@ pub fn test_beacon_1() {
         0x71, 0xaf, 0x73, 0x44, 0x55,
     ];
     let res = test_msg_decode(&rx);
+}
+
+#[test]
+#[cfg(feature = "legacy")]
+pub fn test_short_laso_rx_reversal_2packets() {
+    let mut msg: Message<22> = Message::default();
+    msg.source_address = 0x55;
+    msg.packet_type = Some(LasoPacketType::GsmStatus.into());
+    msg.version = MessageVersion::LegacyLaso;
+    msg.add(0x01_u8);
+    msg.add(0x0203_u16);
+    // Padding
+    for _ in 0..6 {
+        msg.add(0x00_u8);
+    }
+    test_msg_reversal_w_rx_length(&msg, 1, 2);
 }
