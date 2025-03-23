@@ -145,7 +145,7 @@ pub fn test_long_short_v2_reversal() {
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
     // Padding
-    for _ in 0..6 {
+    for _ in 0..17 {
         msg.add(0x00_u8);
     }
     test_msg_reversal(&msg);

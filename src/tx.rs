@@ -43,13 +43,14 @@ impl<'a, const N: usize> MessageSender<'a, N> {
     }
 
     pub fn data_to_send(&self) -> bool {
-        self.sent < self.message.data.len()
+        self.sent < self.message.data.len() || self.force_next
     }
 
     pub fn packet(&mut self) -> PacketData {
         let mut p = PacketData::new();
 
         p.status = self.next_status;
+        self.force_next = false;
         let mut capacity = p.data.capacity();
 
         match p.status {

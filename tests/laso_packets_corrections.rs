@@ -42,9 +42,11 @@ fn test_msg_reversal_w_corruption(msg: &Message<22>) {
 }
 
 #[test]
+#[cfg(feature = "legacy")]
 pub fn test_short_laso_reversal_w_noise() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
+    msg.version = MessageVersion::LegacyLaso;
     msg.packet_type = Some(LasoPacketType::GsmStatus.into());
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
@@ -78,11 +80,11 @@ pub fn test_short_v2_reversal_w_noise() {
     let mut msg: Message<22> = Message::default();
     msg.source_address = 0x55;
     msg.packet_type = Some(LasoPacketType::GsmStatus.into());
-    msg.version = MessageVersion::V2;
+    msg.version = MessageVersion::V2Short;
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
     // Padding
-    for _ in 0..6 {
+    for _ in 0..5 {
         msg.add(0x00_u8);
     }
     test_msg_reversal_w_corruption(&msg);

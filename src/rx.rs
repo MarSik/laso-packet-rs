@@ -60,7 +60,11 @@ pub enum RxDecodeError {
 }
 
 impl<'a, const N: usize> RxMessage<'a, N> {
-    pub fn append(&mut self, dec: &GolayDecoderResult) -> Result<(), RxDecodeError> {
+    pub fn decode_status(&self, status: u8) -> PacketStatus {
+        self.last_status.decode(status)
+    }
+
+    pub fn append(&mut self, dec: &GolayDecoderResult) -> Result<PacketStatus, RxDecodeError> {
         let p = &dec.data;
         // Unexpected packet
         #[cfg(feature = "legacy")]
@@ -189,7 +193,7 @@ impl<'a, const N: usize> RxMessage<'a, N> {
             self.msg.data.push(b).map_err(|_| RxDecodeError::Full)?;
         }
 
-        Ok(())
+        Ok(self.last_status)
     }
 }
 
