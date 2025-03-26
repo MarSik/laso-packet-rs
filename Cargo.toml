@@ -8,8 +8,8 @@ legacy = []
 fulltest = []
 
 [dependencies]
-crc = "3.2.1"
-heapless = "0.7.16"
+crc = "3.2"
+heapless = "0.8"
 ignore-result = "0.2.0"
 ufmt = "0.2.0"
 
@@ -18,4 +18,4 @@ quickcheck = "1"
 quickcheck_macros = "1"
 assert_hex = "0.2.2"
 bitvec = { version = "1", default-features = false }
-futures-lite = "2.6.0"
+futures-lite = "2.6"
