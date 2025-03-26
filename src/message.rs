@@ -17,6 +17,7 @@ pub enum MessageVersion {
     V2,
     V2Short,
     Naked,
+    NakedShort,
 }
 
 // Message builder with flags

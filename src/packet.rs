@@ -38,10 +38,10 @@ impl PacketStatusV2 {
         Self { listens, ..self }
     }
 
-    pub(crate) fn short() -> PacketStatusV2 {
+    pub(crate) fn short(self) -> PacketStatusV2 {
         Self {
             short: true,
-            ..Default::default()
+            ..self
         }
     }
 }

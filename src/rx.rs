@@ -24,7 +24,6 @@ pub const LASO_CRC: crc::Crc<u8, NoTable> = crc::Crc::<u8, NoTable>::new(&CRC8K_
 #[derive(Clone)]
 pub struct RxMessage<'a, const N: usize> {
     pub msg: Message<N>,
-    pub naked: bool,
     pub rssi: u8,
     pub lna: u8,
     pub errors: u8,
@@ -38,7 +37,6 @@ impl<'a, const N: usize> Default for RxMessage<'a, N> {
         Self {
             crc8: LASO_CRC.digest(),
             msg: Default::default(),
-            naked: Default::default(),
             rssi: Default::default(),
             lna: Default::default(),
             errors: Default::default(),
@@ -123,18 +121,20 @@ impl<'a, const N: usize> RxMessage<'a, N> {
                 self.msg.version = MessageVersion::LegacyLaso;
             }
             PacketStatus::V2(v2) => {
-                self.naked = v2.naked;
-
                 let packet_type;
-                if !self.naked {
+                if !v2.naked {
                     (packet_type, skip) = decode_extended_number(dec.data.data.as_slice(), skip);
                     self.msg.packet_type = Some(packet_type);
                 }
                 (self.msg.source_address, skip) =
                     decode_extended_number(dec.data.data.as_slice(), skip);
 
-                if self.naked {
-                    self.msg.version = MessageVersion::Naked;
+                if v2.naked {
+                    if v2.short {
+                        self.msg.version = MessageVersion::NakedShort;
+                    } else {
+                        self.msg.version = MessageVersion::Naked;
+                    }
                 } else if v2.short {
                     self.msg.version = MessageVersion::V2Short;
                     // Subtract 1 from size, the last data byte contains CRC
@@ -144,21 +144,23 @@ impl<'a, const N: usize> RxMessage<'a, N> {
                     self.msg.version = MessageVersion::V2;
                 }
 
-                // Feed data into CRC, including status byte
-                self.crc8.update(&p.data[..size]);
-                self.crc8.update(&[p.status.encode()]);
+                if !v2.naked {
+                    // Feed data into CRC, including status byte
+                    self.crc8.update(&p.data[..size]);
+                    self.crc8.update(&[p.status.encode()]);
 
-                if v2.short {
-                    // This is fine, because 1 was subtracted
-                    // from size above. It now points to the last
-                    // byte that contains CRC
-                    let crc = p.data[size];
+                    if v2.short {
+                        // This is fine, because 1 was subtracted
+                        // from size above. It now points to the last
+                        // byte that contains CRC
+                        let crc = p.data[size];
 
-                    // Test checksum without modifying the digest
-                    // this allows using the same running digest
-                    // for followup packets
-                    if crc != self.crc8.clone().finalize() {
-                        return Err(RxDecodeError::CrcFailed);
+                        // Test checksum without modifying the digest
+                        // this allows using the same running digest
+                        // for followup packets
+                        if crc != self.crc8.clone().finalize() {
+                            return Err(RxDecodeError::CrcFailed);
+                        }
                     }
                 }
             }

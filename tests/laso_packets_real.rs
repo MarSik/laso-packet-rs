@@ -88,6 +88,9 @@ pub fn test_beacon_1() {
         0x71, 0xaf, 0x73, 0x44, 0x55,
     ];
     let res = test_msg_decode(&rx);
+    assert!(res.is_ok());
+    let res = res.unwrap();
+    assert_eq!(res.msg.version, MessageVersion::V2Short);
 }
 
 #[test]

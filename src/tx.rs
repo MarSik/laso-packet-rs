@@ -30,10 +30,13 @@ impl<'a, const N: usize> MessageSender<'a, N> {
                     PacketStatus::V2(PacketStatusV2::default().listens(listens))
                 }
                 crate::message::MessageVersion::V2Short => {
-                    PacketStatus::V2(PacketStatusV2::short().listens(listens))
+                    PacketStatus::V2(PacketStatusV2::default().short().listens(listens))
                 }
                 crate::message::MessageVersion::Naked => {
                     PacketStatus::V2(PacketStatusV2::naked().listens(listens))
+                }
+                crate::message::MessageVersion::NakedShort => {
+                    PacketStatus::V2(PacketStatusV2::naked().short().listens(listens))
                 }
             },
             sent: 0,
@@ -105,11 +108,11 @@ impl<'a, const N: usize> MessageSender<'a, N> {
                         // The last byte will contain CRC8
                         capacity -= 1;
                     }
-
-                    // When short is not set, make sure the next packet will
-                    // be generated even when empty
-                    self.force_next = !v2.short;
                 }
+
+                // When short is not set, make sure the next packet will
+                // be generated even when empty
+                self.force_next = !v2.short;
             }
             // The following are end states, no change for follow-up packets
             PacketStatus::CRC8P(_) => (),

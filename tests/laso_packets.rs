@@ -193,7 +193,7 @@ pub fn test_long_v2_long_type_reversal() {
 pub fn test_naked_reversal() {
     let mut msg: Message<23> = Message::default();
     msg.source_address = 0x55;
-    msg.version = MessageVersion::Naked;
+    msg.version = MessageVersion::NakedShort;
     msg.add(0x01_u8);
     msg.add(0x0203_u16);
     // Padding
@@ -216,6 +216,19 @@ pub fn test_long_naked_reversal() {
     msg.add(0x0a0b_u16);
     // Padding
     for _ in 0..11 {
+        msg.add(0x00_u8);
+    }
+    test_msg_reversal(&msg);
+}
+
+#[test]
+pub fn test_short_long_naked_reversal() {
+    let mut msg: Message<23> = Message::default();
+    msg.source_address = 0x55;
+    msg.version = MessageVersion::Naked;
+    msg.add(0x01_u8);
+    // Padding
+    for _ in 0..21 {
         msg.add(0x00_u8);
     }
     test_msg_reversal(&msg);
