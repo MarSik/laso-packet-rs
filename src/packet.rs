@@ -5,7 +5,7 @@ use ufmt::derive::uDebug;
 use crate::dc::{balance, strip};
 
 #[cfg(feature = "legacy")]
-#[derive(uDebug, Clone, Copy, Eq, PartialEq, Debug, Default)]
+#[derive(defmt::Format, uDebug, Clone, Copy, Eq, PartialEq, Debug, Default)]
 pub struct PacketStatusLegacy {
     pub first: bool,
     pub last: bool,
