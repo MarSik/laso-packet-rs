@@ -45,7 +45,7 @@ impl<'a, const N: usize> Default for RxMessage<'a, N> {
     }
 }
 
-#[derive(uDebug, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(defmt::Format, uDebug, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RxDecodeError {
     OutOfOrder,
     Unexpected,

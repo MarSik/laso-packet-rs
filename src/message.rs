@@ -9,7 +9,7 @@ use crate::{
     util::{encode_varlength, IntoLeastSigByte},
 };
 
-#[derive(uDebug, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(defmt::Format, uDebug, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum MessageVersion {
     #[cfg(feature = "legacy")]
     LegacyLaso,

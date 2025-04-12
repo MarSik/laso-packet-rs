@@ -12,7 +12,7 @@ pub struct PacketStatusLegacy {
     pub checksum4: u8,
 }
 
-#[derive(uDebug, Clone, Copy, Eq, PartialEq, Debug, Default)]
+#[derive(defmt::Format, uDebug, Clone, Copy, Eq, PartialEq, Debug, Default)]
 pub struct PacketStatusV2 {
     pub short: bool, // Just one packet
 
@@ -46,7 +46,7 @@ impl PacketStatusV2 {
     }
 }
 
-#[derive(uDebug, Clone, Copy, Eq, PartialEq, Debug, Default)]
+#[derive(defmt::Format, uDebug, Clone, Copy, Eq, PartialEq, Debug, Default)]
 #[repr(u8)]
 pub enum PacketStatus {
     // The original LASO packet format
