@@ -37,8 +37,7 @@ mod test {
             let decoded = strip(encoded);
             assert_eq!(
                 b, decoded,
-                "6 to 8 reversability broken for 0x{:x} (encoded 0x{:x}, decoded 0x{:x})",
-                b, encoded, decoded
+                "6 to 8 reversability broken for 0x{b:x} (encoded 0x{encoded:x}, decoded 0x{decoded:x})",
             );
         }
     }
@@ -72,10 +71,7 @@ mod test {
 
             assert!(
                 sequence <= 3,
-                "6 to 8 contains long streak of {} same bits for 0x{:x} (encoded 0x{:x})",
-                sequence,
-                b,
-                encoded
+                "6 to 8 contains long streak of {sequence} same bits for 0x{b:x} (encoded 0x{encoded:x})",
             );
         }
     }
@@ -90,7 +86,7 @@ mod test {
 
                 let sequence = longest_bit_sequence((encoded1 as u16) << 8 | encoded2 as u16, 16);
 
-                assert!(sequence <= 5, "6 to 8 contains long streak of {} same bits for 0x{:x}|{:x} (encoded 0x{:x}|{:x})", sequence, b1, b2, encoded1, encoded2);
+                assert!(sequence <= 5, "6 to 8 contains long streak of {sequence} same bits for 0x{b1:x}|{b2:x} (encoded 0x{encoded1:x}|{encoded2:x})");
             }
         }
     }
@@ -114,8 +110,7 @@ mod test {
 
         assert!(
             sequence < 3000,
-            "Average sequence length is {} / 1000",
-            sequence
+            "Average sequence length is {sequence} / 1000"
         );
     }
 

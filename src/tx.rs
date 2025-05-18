@@ -91,7 +91,7 @@ impl<'a, const N: usize> MessageSender<'a, N> {
                     }
                 }
 
-                encode_varlength(self.message.source_address as u32, |b| {
+                encode_varlength(self.message.source_address, |b| {
                     p.data.push(b).ignore();
                 });
 

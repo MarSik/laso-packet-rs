@@ -3,7 +3,7 @@ use laso_packet::{
     behavior::decode_with_breaks,
     laso::LasoPacketType,
     message::{Message, MessageVersion},
-    rx::RxMessage,
+    rx::RxMessageDecoder,
     tx::MessageSender,
 };
 
@@ -20,14 +20,14 @@ fn test_msg_reversal<const N: usize>(msg: &Message<N>) {
     }
 
     // Reception and decode
-    let mut rx: RxMessage<N> = RxMessage::default();
+    let mut rx: RxMessageDecoder<N> = RxMessageDecoder::default();
     for from_radio in radio_packets {
         let p = block_on(decode_with_breaks(&from_radio));
         assert!(p.parity_errors == 0);
         assert!(p.errors == 0);
 
         if let Err(err) = rx.append(&p) {
-            panic!("Rx decode error: {:?}", err);
+            panic!("Rx decode error: {err:?}");
         }
     }
 

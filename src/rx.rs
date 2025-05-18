@@ -21,8 +21,16 @@ const CRC8K_3: Algorithm<u8> = Algorithm {
 };
 pub const LASO_CRC: crc::Crc<u8, NoTable> = crc::Crc::<u8, NoTable>::new(&CRC8K_3);
 
+#[derive(Clone, Default)]
+pub struct RxMessage<const N: usize> {
+    pub msg: Message<N>,
+    pub rssi: u8,
+    pub lna: u8,
+    pub errors: u8,
+}
+
 #[derive(Clone)]
-pub struct RxMessage<'a, const N: usize> {
+pub struct RxMessageDecoder<'a, const N: usize> {
     pub msg: Message<N>,
     pub rssi: u8,
     pub lna: u8,
@@ -32,7 +40,7 @@ pub struct RxMessage<'a, const N: usize> {
     crc8: Digest<'a, u8, NoTable>,
 }
 
-impl<'a, const N: usize> Default for RxMessage<'a, N> {
+impl<'a, const N: usize> Default for RxMessageDecoder<'a, N> {
     fn default() -> Self {
         Self {
             crc8: LASO_CRC.digest(),
@@ -57,7 +65,7 @@ pub enum RxDecodeError {
     InternalOnly,
 }
 
-impl<'a, const N: usize> RxMessage<'a, N> {
+impl<'a, const N: usize> RxMessageDecoder<'a, N> {
     pub fn decode_status(&self, status: u8) -> PacketStatus {
         self.last_status.decode(status)
     }
@@ -199,12 +207,32 @@ impl<'a, const N: usize> RxMessage<'a, N> {
     }
 }
 
-impl<'a, const N: usize> From<Message<N>> for RxMessage<'a, N> {
+impl<const N: usize> From<Message<N>> for RxMessage<N> {
+    fn from(msg: Message<N>) -> Self {
+        Self {
+            msg,
+            ..Default::default()
+        }
+    }
+}
+
+impl<'a, const N: usize> From<Message<N>> for RxMessageDecoder<'a, N> {
     fn from(msg: Message<N>) -> Self {
         Self {
             msg,
             last_status: PacketStatus::Internal,
             ..Default::default()
+        }
+    }
+}
+
+impl<'a, const N: usize> From<RxMessageDecoder<'a, N>> for RxMessage<N> {
+    fn from(msg: RxMessageDecoder<'a, N>) -> Self {
+        Self {
+            msg: msg.msg,
+            rssi: msg.rssi,
+            lna: msg.lna,
+            errors: msg.errors,
         }
     }
 }

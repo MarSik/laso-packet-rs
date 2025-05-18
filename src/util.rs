@@ -74,7 +74,7 @@ mod test {
             let mut sender_id: Message<3> = Message::default();
             sender_id.add(encode_id(i));
 
-            assert_eq!(sender_var.data, sender_id.data, "bad match for 0x{:x}", i);
+            assert_eq!(sender_var.data, sender_id.data, "bad match for 0x{i:x}");
         }
     }
 }

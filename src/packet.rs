@@ -273,7 +273,7 @@ impl PacketWithGolay {
         debug_assert_eq!(c >> 12, 0);
 
         let s = Self::syndrome(c.into());
-        let code = (s as u32) | (c as u32);
+        let code = s | (c as u32);
 
         (Self::parity_24b(code) << 23) | code /* assemble codeword */
     }
@@ -292,7 +292,7 @@ impl PacketWithGolay {
             cw >>= 1; /* shift intermediate result */
         }
 
-        return cw << 12; /* value pairs with upper bits of cw */
+        cw << 12 /* value pairs with upper bits of cw */
     }
 
     fn parity_24b(cw: u32) -> u32 {
@@ -311,7 +311,7 @@ impl PacketWithGolay {
         let mut sum: usize = 0;
         while b > 0 {
             sum += ONES[(b & 0xf) as usize] as usize;
-            b = b >> 4;
+            b >>= 4;
         }
         sum
     }
@@ -326,7 +326,7 @@ impl PacketWithGolay {
             }
         }
 
-        return cw & 0x7fffff;
+        cw & 0x7fffff
     }
 
     /* This function rotates 23 bit codeword cw right by n bits. */
@@ -339,7 +339,7 @@ impl PacketWithGolay {
             }
         }
 
-        return cw & 0x7fffff;
+        cw & 0x7fffff
     }
 
     fn undo_golay(raw: u32) -> (u16, usize, bool) {
@@ -361,10 +361,10 @@ impl PacketWithGolay {
                 if j > 0
                 /* restore last trial bit */
                 {
-                    cw = cw ^ mask; /* xor with old mask */
+                    cw ^= mask; /* xor with old mask */
                     mask <<= 1; /* point to next bit */
                 }
-                cw = cw ^ mask; /* flip next trial bit by xoring with mask */
+                cw ^= mask; /* flip next trial bit by xoring with mask */
                 w = 2; /* lower the threshold while bit diddling as another error might have been introduced */
             }
 
@@ -380,7 +380,7 @@ impl PacketWithGolay {
                     if weight <= w
                     /* syndrome matches error pattern */
                     {
-                        cw = cw ^ s; /* remove errors by xoring with syndrome */
+                        cw ^= s; /* remove errors by xoring with syndrome */
                         cw = Self::rotate_right(cw, i); /* unrotate data */
 
                         let c = (cw & 0xfff) as u16;
@@ -402,7 +402,7 @@ impl PacketWithGolay {
             }
         }
 
-        return ((cwsaver & 0xfff) as u16, 0, Self::parity_24b(cwsaver) == 0); /* return original if no corrections */
+        ((cwsaver & 0xfff) as u16, 0, Self::parity_24b(cwsaver) == 0) /* return original if no corrections */
     }
 }
 
@@ -446,11 +446,11 @@ impl From<&PacketWithGolay> for GolayDecoderResult {
             i_dst += 3;
         }
 
+        // The destination is sized properly to take 11B
         ret.data.data.clear();
-        for i in 0..11 {
-            // The destination is sized properly to take 11B
-            ret.data.data.push(buff[i]).ignore();
-        }
+        buff.iter()
+            .take(11)
+            .for_each(|b| ret.data.data.push(*b).ignore());
         ret.data.status = PacketStatus::Raw(buff[11]);
 
         ret
@@ -599,7 +599,7 @@ impl From<&PacketWithGolay> for PacketWithInterleave {
             src_h >>= 1;
         }
 
-        return ret;
+        ret
     }
 }
 
@@ -1143,7 +1143,7 @@ mod test {
         for b in 0_u8..=0x3f {
             let encoded = PacketWithoutDC::balance_dc(b);
             let decoded = PacketWithoutDC::strip_dc_balance_single(encoded);
-            assert_eq!(b, decoded, "6 to 8 reversability broken for {}", b);
+            assert_eq!(b, decoded, "6 to 8 reversability broken for {b}");
         }
     }
 

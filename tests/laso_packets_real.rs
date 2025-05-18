@@ -4,15 +4,15 @@ use laso_packet::{
     laso::LasoPacketType,
     message::{Message, MessageVersion},
     packet::PacketStatus,
-    rx::{RxDecodeError, RxMessage},
+    rx::{RxDecodeError, RxMessage, RxMessageDecoder},
     tx::MessageSender,
 };
 
 fn test_msg_decode(from_radio: &[u8; 64]) -> Result<RxMessage<23>, RxDecodeError> {
-    let mut rx = RxMessage::default();
+    let mut rx = RxMessageDecoder::default();
     for i in 0..=1 {
         let p = block_on(decode_with_breaks(&from_radio[i * 32..(i + 1) * 32]));
-        println!("Packet: {:?}", p);
+        println!("Packet: {p:?}");
         if let PacketStatus::Raw(status) = p.data.status {
             println!("Status after decoding: {:?}", rx.decode_status(status));
         }
@@ -24,12 +24,12 @@ fn test_msg_decode(from_radio: &[u8; 64]) -> Result<RxMessage<23>, RxDecodeError
                 }
             }
             Err(err) => {
-                panic!("Rx decode error: {:?}", err);
+                panic!("Rx decode error: {err:?}");
             }
         }
     }
 
-    Ok(rx)
+    Ok(rx.into())
 }
 
 fn test_msg_reversal_w_rx_length<const N: usize>(msg: &Message<N>, tx_len: usize, rx_len: usize) {
@@ -57,7 +57,7 @@ fn test_msg_reversal_w_rx_length<const N: usize>(msg: &Message<N>, tx_len: usize
     }
 
     // Reception and decode
-    let mut rx: RxMessage<N> = RxMessage::default();
+    let mut rx: RxMessageDecoder<N> = RxMessageDecoder::default();
     for from_radio in radio_packets {
         let p = block_on(decode_with_breaks(&from_radio));
         assert!(p.parity_errors == 0);
@@ -70,7 +70,7 @@ fn test_msg_reversal_w_rx_length<const N: usize>(msg: &Message<N>, tx_len: usize
                 }
             }
             Err(err) => {
-                panic!("Rx decode error: {:?}", err);
+                panic!("Rx decode error: {err:?}");
             }
         }
     }
